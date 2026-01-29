@@ -1,0 +1,18 @@
+export const Panel = ({
+  children,
+  size,
+  minSize = 10,
+}: {
+  children: React.ReactNode;
+  size: number;
+  minSize?: number;
+}) => {
+  return (
+    <div
+      className="relative flex flex-col overflow-hidden bg-primary"
+      style={{ flex: `${size} 1 0%`, minWidth: `${minSize}%` }}
+    >
+      {children}
+    </div>
+  );
+};

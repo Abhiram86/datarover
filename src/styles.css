@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@source "../";
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
+    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@theme {
+  --color-primary: #f8fceb;
+  --color-primary-muted: #f1f5e1; /* Slightly deeper for hierarchy */
+  /* Darkened for better punch */
+  --color-neutral: #334155;
+  --color-neutral-strong: #0f172a;
+}
+
+@layer utilities {
+  .bg-grid-mesh {
+    background-image:
+      linear-gradient(to right, rgba(73, 86, 100, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(73, 86, 100, 0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  /* Hybrid Grid Styling: Non-whitish, integrated look */
+  .hybrid-grid {
+    /* Use the deep dark from your code editor */
+    --ag-background-color: #020617;
+    --ag-header-background-color: #0a0f1d;
+    --ag-odd-row-background-color: #03081c;
+
+    /* Text colors - muted blue/gray for better readability in dark mode */
+    --ag-foreground-color: #94a3b8;
+    --ag-header-foreground-color: #64748b;
+
+    /* Borders - very subtle so it doesn't look "boxy" */
+    --ag-border-color: rgba(255, 255, 255, 0.05);
+    --ag-row-border-color: rgba(255, 255, 255, 0.03);
+
+    /* Active/Hover states */
+    --ag-row-hover-color: rgba(59, 130, 246, 0.05); /* Very faint blue hover */
+    --ag-selected-row-background-color: rgba(59, 130, 246, 0.1);
+
+    --ag-font-family:
+      "JetBrains Mono", "Fira Code", monospace; /* Matches editor vibe */
+    --ag-font-size: 12px;
+    --ag-grid-size: 6px;
+    --ag-header-height: 36px;
+  }
+
+  /* Remove the aggressive white shadow ag-grid sometimes adds */
+  .ag-theme-quartz-dark.hybrid-grid {
+    box-shadow: none !important;
+  }
+
+  /* Style the scrollbars to be dark and thin */
+  .hybrid-grid ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .hybrid-grid ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+}
