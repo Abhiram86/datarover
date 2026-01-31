@@ -60,7 +60,7 @@ export default function DataPreview() {
           Data Explorer
         </h4>
 
-        <span className="text-[10px] font-mono text-blue-400/50 bg-blue-400/5 px-2 py-1 rounded border border-blue-400/10">
+        <span className="text-[10px] font-mono text-primary bg-blue-400/5 px-2 py-1 rounded border border-blue-400/10">
           {rows.length} ROWS
         </span>
       </div>

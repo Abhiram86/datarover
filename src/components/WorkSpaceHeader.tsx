@@ -1,9 +1,18 @@
 import { useFileStore } from "@/store/file";
-import { uploadFile } from "@/utils/files.functions";
+import { uploadFile, writeFileToDB } from "@/utils/files.functions";
+import { SupabaseClient } from "@supabase/supabase-js";
+import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 
-export default function WorkspaceHeader() {
+export default function WorkspaceHeader({
+  supabase,
+}: {
+  supabase: SupabaseClient;
+}) {
   const uploadFileFn = useServerFn(uploadFile);
+  const navigate = useNavigate();
+  const writeFileToDBFn = useServerFn(writeFileToDB);
+  const storage = supabase.storage.from("datafiles");
   const { preview, setPreview, setError, setUploading } = useFileStore();
   const handleFileUpload = async () => {
     const input = document.createElement("input");
@@ -22,9 +31,28 @@ export default function WorkspaceHeader() {
         const resp = await uploadFileFn({ data: formData });
         if (resp.success) {
           console.log("Success: ", resp.data);
-          setPreview(resp.data);
-        } else {
-          setError("Failed to upload file");
+          if (resp.data.perms.permission) {
+            await storage.uploadToSignedUrl(
+              resp.data.perms.data?.path!,
+              resp.data.perms.data?.token!,
+              file,
+            );
+            await writeFileToDBFn({
+              data: {
+                id: resp.data.perms.workspaceId,
+                name: file.name,
+                user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6",
+                file_type: "csv",
+              },
+            });
+            setPreview(resp.data.preview);
+            navigate({
+              to: "/workspace/$slug",
+              params: { slug: resp.data.perms.workspaceId! },
+            });
+          } else {
+            setError("Failed to upload file");
+          }
         }
       } catch (error) {
         console.error(error);

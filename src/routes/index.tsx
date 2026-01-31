@@ -1,3 +1,5 @@
+import Footer from "@/components/Footer";
+import Header from "@/components/Header";
 import { createFileRoute } from "@tanstack/react-router";
 import { Brain, Code, FileClock } from "lucide-react";
 
@@ -5,36 +7,41 @@ export const Route = createFileRoute("/")({ component: App });
 
 function App() {
   return (
-    <main>
-      <Hero />
+    <>
+      <Header />
 
-      {/* Requirement 1: The Workspace Visualization */}
-      <ProductPreview />
+      <main>
+        <Hero />
 
-      {/* Requirement 3, 4, 6: Modular Features */}
-      <section id="features" className="max-w-7xl mx-auto px-6 py-32">
-        <div className="grid md:grid-cols-3 gap-8">
-          <FeatureCard
-            icon={<Code className="w-7 h-7" />}
-            tag="Executor"
-            title="Python Engine"
-            content="Full support for Pandas and Polars. Perform complex transformations safely in a web-based sandbox."
-          />
-          <FeatureCard
-            icon={<FileClock className="w-7 h-7" />}
-            tag="Tracker"
-            title="Change Logging"
-            content="Every row modification is recorded. Browse through your transformation history like a professional version control system."
-          />
-          <FeatureCard
-            icon={<Brain className="w-7 h-7" />}
-            tag="Memory"
-            title="Insight Recall"
-            content="The Memory System stores your observations, making them available to reference in future chat sessions automatically."
-          />
-        </div>
-      </section>
-    </main>
+        {/* Requirement 1: The Workspace Visualization */}
+        <ProductPreview />
+
+        {/* Requirement 3, 4, 6: Modular Features */}
+        <section id="features" className="max-w-7xl mx-auto px-6 py-32">
+          <div className="grid md:grid-cols-3 gap-8">
+            <FeatureCard
+              icon={<Code className="w-7 h-7" />}
+              tag="Executor"
+              title="Python Engine"
+              content="Full support for Pandas and Polars. Perform complex transformations safely in a web-based sandbox."
+            />
+            <FeatureCard
+              icon={<FileClock className="w-7 h-7" />}
+              tag="Tracker"
+              title="Change Logging"
+              content="Every row modification is recorded. Browse through your transformation history like a professional version control system."
+            />
+            <FeatureCard
+              icon={<Brain className="w-7 h-7" />}
+              tag="Memory"
+              title="Insight Recall"
+              content="The Memory System stores your observations, making them available to reference in future chat sessions automatically."
+            />
+          </div>
+        </section>
+      </main>
+      <Footer />
+    </>
   );
 }
 

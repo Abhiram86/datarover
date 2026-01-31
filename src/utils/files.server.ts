@@ -1,4 +1,14 @@
 import * as XLSX from "xlsx";
+import { db } from "./db.server";
+import { workspacesTable } from "@/db/schema";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_PROJECT_URL!,
+  process.env.SUPABASE_SECRET_KEY!,
+);
+
+const storage = supabase.storage.from("datafiles");
 
 async function parseCSVPreview(file: File) {
   const text = await file.text();
@@ -106,4 +116,44 @@ export async function parseDataFromFile(file: File): Promise<ParsedPreview> {
     rows: [],
     totalPreviewRows: 0,
   };
+}
+
+type UploadPermission = {
+  workspaceId: string | null;
+  permission: boolean;
+  data: {
+    path: string;
+    signedUrl: string;
+    token: string;
+  } | null;
+  error: string | null;
+};
+
+export async function uploadToSupabase(): Promise<UploadPermission> {
+  try {
+    const newW = await db
+      .insert(workspacesTable)
+      .values({
+        file_type: "csv",
+        name: "Untitled_Dataset.csv",
+        user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6",
+      })
+      .returning({ id: workspacesTable.id });
+    const { data, error } = await storage.createSignedUploadUrl(
+      `data/${newW[0].id}`,
+    );
+    console.error("supabase upload", error);
+    if (error) {
+      return {
+        workspaceId: newW[0].id,
+        permission: false,
+        data: null,
+        error: error.message,
+      };
+    }
+    return { workspaceId: newW[0].id, permission: true, data, error: null };
+  } catch (error) {
+    console.error(error);
+    return { workspaceId: null, permission: false, data: null, error: null };
+  }
 }
