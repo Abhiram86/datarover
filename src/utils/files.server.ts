@@ -1,16 +1,11 @@
 import * as XLSX from "xlsx";
 import { db } from "./db.server";
 import { workspacesTable } from "@/db/schema";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.SUPABASE_PROJECT_URL!,
-  process.env.SUPABASE_SECRET_KEY!,
-);
+import { supabase } from "./supabase.server";
 
 const storage = supabase.storage.from("datafiles");
 
-async function parseCSVPreview(file: File) {
+export async function parseCSVPreview(file: File) {
   const text = await file.text();
 
   // Use SheetJS to parse CSV properly (handles quoted commas, newlines in fields, etc.)
@@ -46,7 +41,7 @@ async function parseCSVPreview(file: File) {
   };
 }
 
-async function parseExcelPreview(file: File) {
+export async function parseExcelPreview(file: File) {
   const buf = await file.arrayBuffer();
   const workbook = XLSX.read(buf, { type: "array" });
 
@@ -134,7 +129,7 @@ export async function uploadToSupabase(): Promise<UploadPermission> {
     const newW = await db
       .insert(workspacesTable)
       .values({
-        file_type: "csv",
+        file_type: "temp",
         name: "Untitled_Dataset.csv",
         user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6",
       })

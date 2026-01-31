@@ -6,28 +6,49 @@ import { PanelGroup } from "@/components/Panels/PanelGroup";
 import WorkspaceHeader from "@/components/WorkSpaceHeader";
 import { getSupabaseEnv } from "@/utils/sensitive.functions";
 import { createClient } from "@supabase/supabase-js";
+import { getWorkspace } from "@/utils/workspaces.functions";
+import { useFileStore } from "@/store/file";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/workspace/$slug")({
   component: RouteComponent,
   loader: async (ctx) => {
     const env = await getSupabaseEnv();
     const slug = ctx.params.slug;
+    const data = await getWorkspace({ data: slug });
     console.log("slug", slug);
     return {
       env,
       slug,
-      name: "workspace",
+      data,
     };
   },
 });
 
 function RouteComponent() {
-  const loaded = useLoaderData({ from: "/workspace/$slug" });
+  const loaderData = useLoaderData({ from: "/workspace/$slug" });
+  const setPreview = useFileStore((s) => s.setPreview);
+  console.log("render check");
+
+  useEffect(() => {
+    if (loaderData.data.success && loaderData.data.data) {
+      setPreview(loaderData.data.data.preview);
+    }
+  }, [loaderData.data.success, loaderData.data.data]);
+
+  if (loaderData.data.error) {
+    if (loaderData.data.error instanceof String) {
+      return <div>Error: {loaderData.data.error}</div>;
+    } else if (loaderData.data.error instanceof Error) {
+      return <div>Error: {loaderData.data.error.message}</div>;
+    }
+    return <div>Error: Unknown error</div>;
+  }
+
   const supabase = createClient(
-    loaded.env.data.supabaseProjectUrl,
-    loaded.env.data.supabaseAnonKey,
+    loaderData.env.data.supabaseProjectUrl,
+    loaderData.env.data.supabaseAnonKey,
   );
-  console.log("loaded", loaded);
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
       {/* Small Utility Header */}

@@ -13,17 +13,26 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { deleteWorkspace, getWorkspaces } from "@/utils/workspaces.functions";
+import { useServerFn } from "@tanstack/react-start";
 
 export const Route = createFileRoute("/workspace/")({
+  loader: async () => {
+    const data = await getWorkspaces();
+    return {
+      data,
+    };
+  },
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const workspaces = [
-    { id: "1", name: "Quarterly_Sales_Analysis", lastModified: "2h ago" },
-    { id: "2", name: "Customer_Churn_Model", lastModified: "Yesterday" },
-    { id: "3", name: "Inventory_Logs_Final", lastModified: "Jan 24" },
-  ];
+  const loaderData = Route.useLoaderData();
+  if (!loaderData.data.success) {
+    return <div>Error: {loaderData.data.error.message}</div>;
+  }
+
+  const workspaces = loaderData.data.data;
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
@@ -85,11 +94,21 @@ export const WorkspaceCard = ({
   lastModified,
 }: {
   id: string;
-  name: string;
-  lastModified: string;
+  name: string | null;
+  lastModified: string | null;
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const deleteWorkspaceFn = useServerFn(deleteWorkspace);
+
+  const handleDelete = async (id: string) => {
+    const result = await deleteWorkspaceFn({ data: id });
+    if (result.success) {
+      alert("Deleted workspace");
+    } else {
+      console.error("Failed to delete workspace");
+    }
+  };
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -153,6 +172,7 @@ export const WorkspaceCard = ({
             <MenuButton icon={<Share2 size={14} />} label="Share" />
             <div className="h-px bg-neutral-strong/5 my-1" />
             <MenuButton
+              onclick={() => handleDelete(id)}
               icon={<Trash2 size={14} />}
               label="Delete"
               variant="danger"
@@ -169,12 +189,15 @@ const MenuButton = ({
   icon,
   label,
   variant = "default",
+  onclick,
 }: {
   icon: React.ReactNode;
   label: string;
   variant?: "default" | "danger";
+  onclick?: () => void;
 }) => (
   <button
+    onClick={onclick}
     className={`
     w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-bold transition-colors
     ${
