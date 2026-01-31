@@ -8,16 +8,23 @@ import { getSupabaseEnv } from "@/utils/sensitive.functions";
 import { createClient } from "@supabase/supabase-js";
 import { getWorkspace } from "@/utils/workspaces.functions";
 import { useFileStore } from "@/store/file";
+import { queryOptions } from "@tanstack/react-query";
 import { useEffect } from "react";
+
+const workspaceQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["workspace", id],
+    queryFn: () => getWorkspace({ data: id }),
+  });
 
 export const Route = createFileRoute("/workspace/$slug")({
   component: RouteComponent,
-  loader: async (ctx) => {
+  loader: async ({ params, context: { queryClient } }) => {
     const env = await getSupabaseEnv();
-    const slug = ctx.params.slug;
+    const slug = params.slug;
     let data = null;
     if (slug !== "new") {
-      data = await getWorkspace({ data: slug });
+      data = await queryClient.ensureQueryData(workspaceQuery(slug));
     }
     console.log("slug", slug);
     return {
@@ -34,10 +41,12 @@ function RouteComponent() {
   console.log("render check");
 
   useEffect(() => {
-    if (loaderData.data?.success && loaderData.data.data) {
+    if (loaderData.slug === "new") {
+      useFileStore.getState().reset();
+    } else if (loaderData.data?.success && loaderData.data.data) {
       setPreview(loaderData.data.data.preview);
     }
-  }, [loaderData.data?.success, loaderData.data?.data]);
+  }, [loaderData.slug, loaderData.data?.success, loaderData.data?.data, setPreview]);
 
   if (loaderData.data?.error) {
     if (loaderData.data.error instanceof String) {

@@ -3,6 +3,7 @@ import { uploadFile, writeFileToDB } from "@/utils/files.functions";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 export default function WorkspaceHeader({
@@ -13,6 +14,20 @@ export default function WorkspaceHeader({
   const uploadFileFn = useServerFn(uploadFile);
   const navigate = useNavigate();
   const writeFileToDBFn = useServerFn(writeFileToDB);
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (data: {
+      id: string | null;
+      name: string;
+      user_id: string;
+      file_type: string;
+    }) => writeFileToDBFn({ data }),
+    onSuccess: async (result) => {
+      if (result.success) {
+        await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      }
+    },
+  });
   const storage = supabase.storage.from("datafiles");
   const { preview, setPreview, setError, setUploading, isUploading } =
     useFileStore();
@@ -50,25 +65,27 @@ export default function WorkspaceHeader({
 
           // Stage 3: Sync with Database
           toast.loading("Finalizing workspace...", { id: toastId });
-          await writeFileToDBFn({
-            data: {
+          mutation.mutate(
+            {
               id: resp.data.perms.workspaceId,
               name: file.name,
               user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6", // Consider pulling from auth context
               file_type: file.type || "text/csv",
             },
-          });
-
-          // Success!
-          toast.success(`${file.name} ready for analysis`, { id: toastId });
-
-          setPreview(resp.data.preview);
-
-          // Navigation
-          navigate({
-            to: "/workspace/$slug",
-            params: { slug: resp.data.perms.workspaceId! },
-          });
+            {
+              onSettled: () => {
+                toast.success(`${file.name} ready for analysis`, {
+                  id: toastId,
+                });
+                setPreview(resp.data.preview);
+                navigate({
+                  to: "/workspace/$slug",
+                  params: { slug: resp.data.perms.workspaceId! },
+                  replace: true,
+                });
+              },
+            },
+          );
         } else {
           toast.error(resp.error?.message || "Upload permission denied", {
             id: toastId,

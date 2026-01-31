@@ -15,25 +15,40 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { deleteWorkspace, getWorkspaces } from "@/utils/workspaces.functions";
 import { useServerFn } from "@tanstack/react-start";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
+const workspaceQuery = queryOptions({
+  queryKey: ["workspaces"],
+  queryFn: getWorkspaces,
+});
+
 export const Route = createFileRoute("/workspace/")({
-  loader: async () => {
-    const data = await getWorkspaces();
-    return {
-      data,
-    };
+  loader: async ({ context: { queryClient } }) => {
+    return queryClient.ensureQueryData(workspaceQuery);
   },
   component: RouteComponent,
 });
 
 function RouteComponent() {
-  const loaderData = Route.useLoaderData();
-  if (!loaderData.data.success) {
-    return <div>Error: {loaderData.data.error.message}</div>;
+  const { success, error } = Route.useLoaderData();
+  if (!success) {
+    return <div>Error: {error.message}</div>;
   }
 
-  const workspaces = loaderData.data.data;
+  const workspacesQuery = useQuery(workspaceQuery);
+
+  if (!workspacesQuery.data?.success) {
+    return (
+      <div>Error: {workspacesQuery.data?.error.message || "Unknown error"}</div>
+    );
+  }
+  const workspaces = workspacesQuery.data.data;
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
@@ -102,6 +117,30 @@ export const WorkspaceCard = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteWorkspaceFn = useServerFn(deleteWorkspace);
 
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (id: string) => deleteWorkspaceFn({ data: id }),
+    onSuccess: async (result) => {
+      if (result.success) {
+        toast.success("Workspace purged successfully");
+        queryClient.removeQueries({
+          queryKey: ["workspace", id],
+          exact: true,
+        });
+
+        await queryClient.invalidateQueries({
+          queryKey: ["workspaces"],
+        });
+      } else {
+        toast.error("Failed to delete workspace");
+      }
+    },
+    onError: () => {
+      toast.error("Network error during deletion");
+    },
+  });
+
   const handleDelete = (id: string) => {
     toast.custom(
       (t) => (
@@ -129,6 +168,7 @@ export const WorkspaceCard = ({
 
           <div className="flex items-center gap-2 justify-end mt-2">
             <button
+              disabled={mutation.isPending}
               onClick={() => toast.dismiss(t.id)}
               className="px-3 py-1.5 text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong uppercase tracking-widest transition-colors"
             >
@@ -150,20 +190,14 @@ export const WorkspaceCard = ({
     ); // Give them slightly more time to decide
   };
 
-  // The actual execution logic
   const executeDelete = async (id: string) => {
     const loadingToast = toast.loading("Purging workspace data...");
 
-    try {
-      const result = await deleteWorkspaceFn({ data: id });
-      if (result.success) {
-        toast.success("Workspace purged successfully", { id: loadingToast });
-      } else {
-        toast.error("Failed to delete workspace", { id: loadingToast });
-      }
-    } catch (error) {
-      toast.error("Network error during deletion", { id: loadingToast });
-    }
+    mutation.mutate(id, {
+      onSettled: () => {
+        toast.dismiss(loadingToast);
+      },
+    });
   };
 
   // Close menu when clicking outside
