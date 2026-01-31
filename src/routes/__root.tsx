@@ -2,9 +2,9 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import { Toaster } from "react-hot-toast";
 
 import appCss from "../styles.css?url";
+import { CustomToaster } from "@/components/Toaster";
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -51,7 +51,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             ]}
           />
           <Scripts />
-          <Toaster />
+          <CustomToaster />
         </div>
       </body>
     </html>

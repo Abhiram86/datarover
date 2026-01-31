@@ -3,6 +3,7 @@ import { uploadFile, writeFileToDB } from "@/utils/files.functions";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import toast from "react-hot-toast";
 
 export default function WorkspaceHeader({
   supabase,
@@ -24,39 +25,59 @@ export default function WorkspaceHeader({
       const file = input.files?.[0];
       if (!file) return;
 
+      // 1. Initialize the loading toast
+      const toastId = toast.loading("Initializing secure upload...");
+
       const formData = new FormData();
       formData.append("file", file);
 
       try {
         setUploading(true);
+
+        // Stage 1: Get Permissions
         const resp = await uploadFileFn({ data: formData });
-        if (resp.success) {
-          console.log("Success: ", resp.data);
-          if (resp.data.perms.permission) {
-            await storage.uploadToSignedUrl(
-              resp.data.perms.data?.path!,
-              resp.data.perms.data?.token!,
-              file,
-            );
-            await writeFileToDBFn({
-              data: {
-                id: resp.data.perms.workspaceId,
-                name: file.name,
-                user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6",
-                file_type: file.type || "text/csv",
-              },
-            });
-            setPreview(resp.data.preview);
-            navigate({
-              to: "/workspace/$slug",
-              params: { slug: resp.data.perms.workspaceId! },
-            });
-          } else {
-            setError("Failed to upload file");
-          }
+
+        if (resp.success && resp.data.perms.permission) {
+          // Update toast for the next stage
+          toast.loading("Transferring file to storage...", { id: toastId });
+
+          // Stage 2: Storage Upload
+          await storage.uploadToSignedUrl(
+            resp.data.perms.data?.path!,
+            resp.data.perms.data?.token!,
+            file,
+          );
+
+          // Stage 3: Sync with Database
+          toast.loading("Finalizing workspace...", { id: toastId });
+          await writeFileToDBFn({
+            data: {
+              id: resp.data.perms.workspaceId,
+              name: file.name,
+              user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6", // Consider pulling from auth context
+              file_type: file.type || "text/csv",
+            },
+          });
+
+          // Success!
+          toast.success(`${file.name} ready for analysis`, { id: toastId });
+
+          setPreview(resp.data.preview);
+
+          // Navigation
+          navigate({
+            to: "/workspace/$slug",
+            params: { slug: resp.data.perms.workspaceId! },
+          });
+        } else {
+          toast.error(resp.error?.message || "Upload permission denied", {
+            id: toastId,
+          });
+          setError("Failed to upload file");
         }
       } catch (error) {
         console.error(error);
+        toast.error("Process interrupted. Please try again.", { id: toastId });
       } finally {
         setUploading(false);
       }

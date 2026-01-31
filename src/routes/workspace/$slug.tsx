@@ -15,7 +15,10 @@ export const Route = createFileRoute("/workspace/$slug")({
   loader: async (ctx) => {
     const env = await getSupabaseEnv();
     const slug = ctx.params.slug;
-    const data = await getWorkspace({ data: slug });
+    let data = null;
+    if (slug !== "new") {
+      data = await getWorkspace({ data: slug });
+    }
     console.log("slug", slug);
     return {
       env,
@@ -31,12 +34,12 @@ function RouteComponent() {
   console.log("render check");
 
   useEffect(() => {
-    if (loaderData.data.success && loaderData.data.data) {
+    if (loaderData.data?.success && loaderData.data.data) {
       setPreview(loaderData.data.data.preview);
     }
-  }, [loaderData.data.success, loaderData.data.data]);
+  }, [loaderData.data?.success, loaderData.data?.data]);
 
-  if (loaderData.data.error) {
+  if (loaderData.data?.error) {
     if (loaderData.data.error instanceof String) {
       return <div>Error: {loaderData.data.error}</div>;
     } else if (loaderData.data.error instanceof Error) {

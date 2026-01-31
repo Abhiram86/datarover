@@ -15,6 +15,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { deleteWorkspace, getWorkspaces } from "@/utils/workspaces.functions";
 import { useServerFn } from "@tanstack/react-start";
+import toast from "react-hot-toast";
 
 export const Route = createFileRoute("/workspace/")({
   loader: async () => {
@@ -101,12 +102,67 @@ export const WorkspaceCard = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteWorkspaceFn = useServerFn(deleteWorkspace);
 
-  const handleDelete = async (id: string) => {
-    const result = await deleteWorkspaceFn({ data: id });
-    if (result.success) {
-      alert("Deleted workspace");
-    } else {
-      console.error("Failed to delete workspace");
+  const handleDelete = (id: string) => {
+    toast.custom(
+      (t) => (
+        <div
+          className={`
+        flex flex-col gap-3 min-w-[320px] p-4 rounded-xl border shadow-2xl
+        bg-primary border-red-500/20 shadow-neutral-strong/5
+        transition-all duration-300 ease-out
+        ${t.visible ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-4 scale-95"}
+      `}
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-red-500/10 rounded-lg">
+              <Trash2 size={16} className="text-red-500" />
+            </div>
+            <div className="flex-1 flex flex-col gap-1">
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-red-500/60 leading-none">
+                Dangerous Action
+              </span>
+              <div className="text-xs font-bold text-neutral-strong/80 leading-tight">
+                Permanently delete this workspace?
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 justify-end mt-2">
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="px-3 py-1.5 text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong uppercase tracking-widest transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                toast.dismiss(t.id);
+                await executeDelete(id);
+              }}
+              className="px-3 py-1.5 bg-red-500 text-white rounded-md text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
+            >
+              Confirm Delete
+            </button>
+          </div>
+        </div>
+      ),
+      { duration: 6000 },
+    ); // Give them slightly more time to decide
+  };
+
+  // The actual execution logic
+  const executeDelete = async (id: string) => {
+    const loadingToast = toast.loading("Purging workspace data...");
+
+    try {
+      const result = await deleteWorkspaceFn({ data: id });
+      if (result.success) {
+        toast.success("Workspace purged successfully", { id: loadingToast });
+      } else {
+        toast.error("Failed to delete workspace", { id: loadingToast });
+      }
+    } catch (error) {
+      toast.error("Network error during deletion", { id: loadingToast });
     }
   };
 
