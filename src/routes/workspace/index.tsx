@@ -22,6 +22,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { formatDate } from "@/lib/formatDates";
 
 const workspaceQuery = queryOptions({
   queryKey: ["workspaces"],
@@ -104,15 +105,13 @@ function RouteComponent() {
   );
 }
 
-export const WorkspaceCard = ({
-  id,
-  name,
-  lastModified,
-}: {
+interface WorkspaceCardProps {
   id: string;
   name: string | null;
-  lastModified: string | null;
-}) => {
+  lastModified: Date | null;
+}
+
+export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteWorkspaceFn = useServerFn(deleteWorkspace);
@@ -245,7 +244,7 @@ export const WorkspaceCard = ({
             {name}
           </h3>
           <span className="text-[10px] font-medium text-neutral-strong/40">
-            Edited {lastModified}
+            Edited {formatDate(lastModified)}
           </span>
         </div>
       </Link>
@@ -275,17 +274,14 @@ export const WorkspaceCard = ({
 };
 
 // Sub-component for Menu Items
-const MenuButton = ({
-  icon,
-  label,
-  variant = "default",
-  onclick,
-}: {
+interface MenuButtonProps {
   icon: React.ReactNode;
   label: string;
   variant?: "default" | "danger";
   onclick?: () => void;
-}) => (
+}
+
+const MenuButton = ({ icon, label, variant = "default", onclick }: MenuButtonProps) => (
   <button
     onClick={onclick}
     className={`

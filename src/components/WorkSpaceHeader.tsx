@@ -1,16 +1,12 @@
 import { useFileStore } from "@/store/file";
 import { uploadFile, writeFileToDB } from "@/utils/files.functions";
-import { SupabaseClient } from "@supabase/supabase-js";
+import type { WorkspaceHeaderProps } from "@/types/server";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
-export default function WorkspaceHeader({
-  supabase,
-}: {
-  supabase: SupabaseClient;
-}) {
+export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const uploadFileFn = useServerFn(uploadFile);
   const navigate = useNavigate();
   const writeFileToDBFn = useServerFn(writeFileToDB);

@@ -9,7 +9,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getWorkspace } from "@/utils/workspaces.functions";
 import { useFileStore } from "@/store/file";
 import { queryOptions } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 const workspaceQuery = (id: string) =>
   queryOptions({
@@ -37,16 +37,15 @@ export const Route = createFileRoute("/workspace/$slug")({
 
 function RouteComponent() {
   const loaderData = useLoaderData({ from: "/workspace/$slug" });
-  const setPreview = useFileStore((s) => s.setPreview);
   console.log("render check");
 
   useEffect(() => {
     if (loaderData.slug === "new") {
       useFileStore.getState().reset();
-    } else if (loaderData.data?.success && loaderData.data.data) {
-      setPreview(loaderData.data.data.preview);
+    } else if (loaderData.data?.success && loaderData.data.data?.preview) {
+      useFileStore.getState().setPreview(loaderData.data.data.preview);
     }
-  }, [loaderData.slug, loaderData.data?.success, loaderData.data?.data, setPreview]);
+  }, [loaderData.slug, loaderData.data?.success]);
 
   if (loaderData.data?.error) {
     if (loaderData.data.error instanceof String) {
@@ -57,10 +56,15 @@ function RouteComponent() {
     return <div>Error: Unknown error</div>;
   }
 
-  const supabase = createClient(
+  const supabase = useMemo(() => {
+    return createClient(
+      loaderData.env.data.supabaseProjectUrl,
+      loaderData.env.data.supabaseAnonKey,
+    );
+  }, [
     loaderData.env.data.supabaseProjectUrl,
     loaderData.env.data.supabaseAnonKey,
-  );
+  ]);
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
       {/* Small Utility Header */}

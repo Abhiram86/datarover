@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-const ResizeHandle = ({
-  onResize,
-  direction,
-}: {
+interface ResizeHandleProps {
   onResize: (e: MouseEvent) => void;
   direction: "horizontal" | "vertical";
-}) => {
+}
+
+const ResizeHandle = ({ onResize, direction }: ResizeHandleProps) => {
   const [isDragging, setIsDragging] = useState(false);
 
   const startDragging = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -45,19 +44,21 @@ const ResizeHandle = ({
   );
 };
 
-type ResizableChildProps = {
+interface PanelGroupProps {
+  children: React.ReactNode;
+  direction?: "horizontal" | "vertical";
+  className?: string;
+}
+
+interface ResizableChildProps {
   size: number;
-};
+}
 
 export const PanelGroup = ({
   children,
   direction = "horizontal",
   className = "",
-}: {
-  children: React.ReactNode;
-  direction?: "horizontal" | "vertical";
-  className?: string;
-}) => {
+}: PanelGroupProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState<number[]>([]);
 

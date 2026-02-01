@@ -1,16 +1,6 @@
 import { create } from "zustand";
 
-export type FileType = "csv" | "excel" | "unknown";
-
-export type PreviewRow = Record<string, any>;
-
-export interface FilePreview {
-  fileName: string;
-  fileType: FileType;
-  columns: string[];
-  rows: PreviewRow[];
-  totalPreviewRows: number;
-}
+import type { FilePreview } from "@/types/file";
 
 interface FileStoreState {
   // data

@@ -71,7 +71,7 @@ const Hero = () => (
 const ProductPreview = () => (
   <section className="max-w-6xl mx-auto px-6 py-12 relative z-10">
     <div className="bg-neutral-strong p-2 rounded-[2.5rem] shadow-2xl">
-      <div className="bg-primary rounded-[1.8rem] h-[550px] flex overflow-hidden border border-white/10">
+      <div className="bg-primary rounded-[1.8rem] h-137.5 flex overflow-hidden border border-white/10">
         {/* Chat Panel */}
         <div className="w-1/4 border-r border-neutral-strong/5 p-4 flex flex-col gap-4 bg-primary-muted/30">
           <div className="h-4 w-1/2 bg-neutral-strong/10 rounded mb-2" />
@@ -102,7 +102,7 @@ const ProductPreview = () => (
           </div>
         </div>
         {/* Code Panel */}
-        <div className="w-1/3 bg-[#0f172a] selection:bg-neutral p-6 font-mono text-[11px] text-blue-300">
+        <div className="w-1/3 bg-neutral-strong selection:bg-neutral p-6 font-mono text-[11px] text-blue-300">
           <div className="text-gray-500 mb-6 font-bold tracking-widest uppercase">
             # Python 3.10
           </div>
@@ -123,17 +123,14 @@ const ProductPreview = () => (
   </section>
 );
 
-const FeatureCard = ({
-  title,
-  content,
-  tag,
-  icon,
-}: {
+interface FeatureCardProps {
   title: string;
   content: string;
   tag: string;
   icon: React.ReactNode;
-}) => (
+}
+
+const FeatureCard = ({ title, content, tag, icon }: FeatureCardProps) => (
   <div className="group relative p-8 rounded-[2.5rem] bg-white border border-neutral-strong/5 hover:border-neutral-strong/20 transition-all duration-500 hover:shadow-[0_30px_60px_-15px_rgba(2,6,23,0.1)]">
     <div className="flex items-center justify-between mb-4">
       <div className="text-3xl">{icon}</div>

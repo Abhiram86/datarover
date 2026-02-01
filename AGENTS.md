@@ -2,10 +2,10 @@
 
 ## Build & Test Commands
 
-- `npm run dev` - Start dev server on port 3000
-- `npm run build` - Build for production
-- `npm run test` - Run all tests with Vitest
-- `npm run test <path/to/test>` - Run a single test file
+- `bun run dev` - Start dev server on port 3000
+- `bun run build` - Build for production
+- `bun run test` - Run all tests with Vitest
+- `bun run test <path/to/test>` - Run a single test file
 - `vitest run <path/to/test>` - Run single test once
 - `vitest <path/to/test>` - Run single test in watch mode
 
@@ -18,6 +18,7 @@
 - Zustand for state management
 - TailwindCSS v4 for styling
 - Zod for validation
+- Bun for package management and build tools
 
 ## Code Style Guidelines
 

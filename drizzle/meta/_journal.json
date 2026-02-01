@@ -36,6 +36,20 @@
       "when": 1769802821970,
       "tag": "0004_fixed_fantastic_four",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1769892759982,
+      "tag": "0005_pretty_thunderbolt_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1769966013719,
+      "tag": "0006_sour_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

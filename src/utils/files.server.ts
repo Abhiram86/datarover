@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { db } from "./db.server";
 import { workspacesTable } from "@/db/schema";
 import { supabase } from "./supabase.server";
+import type { UploadPermission } from "@/types/file";
 
 const storage = supabase.storage.from("datafiles");
 
@@ -75,13 +76,7 @@ export async function parseExcelPreview(file: File) {
   };
 }
 
-type ParsedPreview = {
-  fileName: string;
-  fileType: "csv" | "excel" | "unknown";
-  columns: string[];
-  rows: Record<string, any>[];
-  totalPreviewRows: number;
-};
+import type { ParsedPreview } from "@/types/file";
 
 export async function parseDataFromFile(file: File): Promise<ParsedPreview> {
   const fileName = file.name.toLowerCase();
@@ -112,17 +107,6 @@ export async function parseDataFromFile(file: File): Promise<ParsedPreview> {
     totalPreviewRows: 0,
   };
 }
-
-type UploadPermission = {
-  workspaceId: string | null;
-  permission: boolean;
-  data: {
-    path: string;
-    signedUrl: string;
-    token: string;
-  } | null;
-  error: string | null;
-};
 
 export async function uploadToSupabase(): Promise<UploadPermission> {
   try {
