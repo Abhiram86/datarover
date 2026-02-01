@@ -31,23 +31,31 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
       const last = messages[lastIndex];
       if (last.role !== "assistant") return state;
 
-      // Handle string (backward compatibility) or object
+      let updated = false;
+
       if (typeof delta === "string") {
-        messages[lastIndex] = {
-          ...last,
-          content: last.content + delta,
-        };
-      } else if (delta.type === "reasoning") {
+        if (delta) {
+          messages[lastIndex] = {
+            ...last,
+            content: last.content + delta,
+          };
+          updated = true;
+        }
+      } else if (delta.type === "reasoning" && delta.text) {
         messages[lastIndex] = {
           ...last,
           reasoning: (last.reasoning || "") + delta.text,
         };
-      } else if (delta.type === "content") {
+        updated = true;
+      } else if (delta.type === "content" && delta.text) {
         messages[lastIndex] = {
           ...last,
           content: last.content + delta.text,
         };
+        updated = true;
       }
+
+      if (!updated) return state;
 
       return { messages };
     }),

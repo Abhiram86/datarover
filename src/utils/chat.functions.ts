@@ -59,9 +59,9 @@ export const generalChatStream = createServerFn({ method: "POST" })
               contentBatch += delta.content;
             }
 
-            // Inline flush logic - check if 50ms passed
+            // Inline flush logic - check if 100ms passed
             const now = Date.now();
-            if (now - lastFlush > 50) {
+            if (now - lastFlush > 100) {
               if (reasoningBatch) {
                 yield JSON.stringify({
                   type: "reasoning",

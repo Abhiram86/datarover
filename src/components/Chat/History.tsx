@@ -2,10 +2,40 @@ import { useConversationStore } from "@/store/conversation";
 import { PromptBox } from "./PromptBox";
 import { Markdown } from "../Markdown";
 import { ChevronDown, Brain } from "lucide-react";
-import { useState } from "react";
+import { useState, memo, useMemo } from "react";
+import type { Message } from "@/types";
+
+const MessageItem = memo(({ msg, isLast }: { msg: Message; isLast: boolean }) => (
+  <div
+    className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+  >
+    <span className="text-[10px] font-bold uppercase text-neutral-strong/20 mb-2">
+      {msg.role}
+    </span>
+
+    {msg.role === "user" ? (
+      <div className="max-w-[90%] text-sm p-3 rounded-2xl leading-relaxed bg-slate-800 text-white shadow-md shadow-slate-200/50">
+        {msg.content}
+      </div>
+    ) : (
+      <div className="w-full space-y-4">
+        {msg.reasoning && (
+          <ReasoningDropdown reasoning={msg.reasoning} isProcessing={isLast && msg.role === "assistant" && !msg.content} />
+        )}
+
+        <div className="text-neutral-strong/90">
+          <Markdown className="prose-md" content={msg.content} />
+        </div>
+      </div>
+    )}
+  </div>
+));
+MessageItem.displayName = "MessageItem";
 
 const History = () => {
   const messages = useConversationStore((s) => s.messages);
+
+  const memoizedMessages = useMemo(() => messages, [messages]);
 
   return (
     <div className="flex flex-col h-full bg-primary">
@@ -16,33 +46,12 @@ const History = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-8">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-          >
-            <span className="text-[10px] font-bold uppercase text-neutral-strong/20 mb-2">
-              {msg.role}
-            </span>
-
-            {msg.role === "user" ? (
-              <div className="max-w-[90%] text-sm p-3 rounded-2xl leading-relaxed bg-slate-800 text-white shadow-md shadow-slate-200/50">
-                {msg.content}
-              </div>
-            ) : (
-              <div className="w-full space-y-4">
-                {/* Reasoning: Minimalist & Integrated */}
-                {msg.reasoning && (
-                  <ReasoningDropdown reasoning={msg.reasoning} />
-                )}
-
-                {/* Main Content: No background, just pure text/markdown */}
-                <div className="text-neutral-strong/90">
-                  <Markdown className="prose-md" content={msg.content} />
-                </div>
-              </div>
-            )}
-          </div>
+        {memoizedMessages.map((msg, idx) => (
+          <MessageItem 
+            key={msg.id} 
+            msg={msg} 
+            isLast={idx === memoizedMessages.length - 1} 
+          />
         ))}
       </div>
 
@@ -51,7 +60,7 @@ const History = () => {
   );
 };
 
-const ReasoningDropdown = ({
+const ReasoningDropdown = memo(({
   reasoning,
   isProcessing = false,
 }: {
@@ -75,7 +84,6 @@ const ReasoningDropdown = ({
 
         <span>Thought Process</span>
 
-        {/* Dynamic Status Indicator */}
         {isProcessing && (
           <span className="flex items-center gap-1 ml-1">
             <span className="w-0.5 h-0.5 rounded-full bg-blue-500 animate-pulse" />
@@ -95,7 +103,6 @@ const ReasoningDropdown = ({
           isOpen ? "max-h-500 opacity-100" : "max-h-0 opacity-0"
         }`}
       >
-        {/* Reduced padding: only 1 unit of top/bottom, 3 units left */}
         <div className="pl-3 py-1 text-[13px] italic text-neutral-strong/40 leading-relaxed">
           <Markdown
             className="prose-sm prose-neutral max-w-none! 
@@ -107,6 +114,7 @@ const ReasoningDropdown = ({
       </div>
     </div>
   );
-};
+});
+ReasoningDropdown.displayName = "ReasoningDropdown";
 
 export default History;
