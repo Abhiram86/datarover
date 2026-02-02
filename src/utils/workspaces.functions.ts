@@ -4,12 +4,21 @@ import { workspacesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { supabase } from "./supabase.server";
 import { parseCSVPreview, parseExcelPreview } from "./files.server";
+import { getCurrentUserFromCookie } from "./jwt.server";
 
 const storage = supabase.storage.from("datafiles");
 
 export const getWorkspaces = createServerFn({ method: "GET" }).handler(
   async () => {
     try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
       const workspaces = await db
         .select({
           id: workspacesTable.id,
@@ -17,9 +26,8 @@ export const getWorkspaces = createServerFn({ method: "GET" }).handler(
           lastModified: workspacesTable.updated_at,
         })
         .from(workspacesTable)
-        .where(
-          eq(workspacesTable.user_id, "7ceb974a-e22d-4923-8398-aac2c0c10ec6"),
-        );
+        .where(eq(workspacesTable.user_id, user.userId));
+
       return {
         success: true,
         data: workspaces,
@@ -52,7 +60,16 @@ export const getWorkspace = createServerFn({ method: "POST" })
         error: data.error,
       };
     }
+
     try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
       const workspace = await db
         .select({
           id: workspacesTable.id,
@@ -62,6 +79,14 @@ export const getWorkspace = createServerFn({ method: "POST" })
         })
         .from(workspacesTable)
         .where(eq(workspacesTable.id, data.id!));
+
+      if (workspace.length === 0) {
+        return {
+          success: false,
+          error: { message: "Workspace not found" },
+        };
+      }
+
       const { data: blob, error } = await storage.download(`data/${data.id}`);
       if (error) {
         return {
@@ -111,7 +136,36 @@ export const deleteWorkspace = createServerFn({ method: "POST" })
         error: data.error,
       };
     }
+
     try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      const workspace = await db
+        .select({ user_id: workspacesTable.user_id })
+        .from(workspacesTable)
+        .where(eq(workspacesTable.id, data.id!))
+        .limit(1);
+
+      if (workspace.length === 0) {
+        return {
+          success: false,
+          error: { message: "Workspace not found" },
+        };
+      }
+
+      if (workspace[0].user_id !== user.userId) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
       await db.delete(workspacesTable).where(eq(workspacesTable.id, data.id!));
 
       await storage.remove([`data/${data.id}`]);
@@ -119,6 +173,63 @@ export const deleteWorkspace = createServerFn({ method: "POST" })
       return {
         success: true,
         data: null,
+      };
+    } catch (error) {
+      console.error(error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? { message: error.message }
+            : { message: "Unknown error" },
+      };
+    }
+  });
+
+export const createWorkspace = createServerFn({ method: "POST" })
+  .inputValidator((data: { name: string; fileType: string }) => {
+    if (!data.name || typeof data.name !== "string") {
+      return { success: false, error: "Invalid workspace name" };
+    }
+    if (!data.fileType || typeof data.fileType !== "string") {
+      return { success: false, error: "Invalid file type" };
+    }
+    return { success: true, data };
+  })
+  .handler(async ({ data }) => {
+    if (!data.success) {
+      return {
+        success: false,
+        error: { message: data.error },
+      };
+    }
+
+    try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      const [newWorkspace] = await db
+        .insert(workspacesTable)
+        .values({
+          name: data.data!.name,
+          file_type: data.data!.fileType,
+          user_id: user.userId,
+        })
+        .returning({
+          id: workspacesTable.id,
+          name: workspacesTable.name,
+          fileType: workspacesTable.file_type,
+          lastModified: workspacesTable.updated_at,
+        });
+
+      return {
+        success: true,
+        data: newWorkspace,
       };
     } catch (error) {
       console.error(error);

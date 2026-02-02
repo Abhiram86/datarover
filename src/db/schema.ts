@@ -13,7 +13,7 @@ import { relations } from "drizzle-orm/relations";
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name").notNull(),
-  email: varchar("email").notNull(),
+  email: varchar("email").notNull().unique(),
   password: varchar("password").notNull(),
   created_at: timestamp("createdAt", { withTimezone: true }).defaultNow(),
   updated_at: timestamp("updatedAt", { withTimezone: true }).defaultNow(),

@@ -1,4 +1,4 @@
-import { createFileRoute, useLoaderData } from "@tanstack/react-router";
+import { createFileRoute, useLoaderData, useRouteContext, redirect } from "@tanstack/react-router";
 import History from "@/components/Chat/History";
 import DataPreview from "@/components/DataPreview";
 import { Panel } from "@/components/Panels/Panel";
@@ -11,6 +11,8 @@ import { useFileStore } from "@/store/file";
 import { queryOptions } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { useConversationStore } from "@/store/conversation";
+import { useUserStore } from "@/store/user";
+import { getCurrentUserFn } from "@/utils/auth.functions";
 
 const workspaceQuery = (id: string) =>
   queryOptions({
@@ -19,6 +21,16 @@ const workspaceQuery = (id: string) =>
   });
 
 export const Route = createFileRoute("/workspace/$slug")({
+  beforeLoad: async ({ location }) => {
+    const user = await getCurrentUserFn();
+    if (!user) {
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href },
+      });
+    }
+    return { user };
+  },
   component: RouteComponent,
   loader: async ({ params, context: { queryClient } }) => {
     const env = await getSupabaseEnv();
@@ -38,7 +50,15 @@ export const Route = createFileRoute("/workspace/$slug")({
 
 function RouteComponent() {
   const loaderData = useLoaderData({ from: "/workspace/$slug" });
+  const { user } = useRouteContext({ from: "/workspace/$slug" });
+  const setUser = useUserStore((state) => state.setUser);
   console.log("render check");
+
+  useEffect(() => {
+    if (user) {
+      setUser(user);
+    }
+  }, [user, setUser]);
 
   useEffect(() => {
     if (loaderData.slug === "new") {
@@ -61,7 +81,7 @@ function RouteComponent() {
   const supabase = useMemo(() => {
     return createClient(
       loaderData.env.data.supabaseProjectUrl,
-      loaderData.env.data.supabaseAnonKey,
+      loaderData.env.data.supabaseAnonKey
     );
   }, [
     loaderData.env.data.supabaseProjectUrl,

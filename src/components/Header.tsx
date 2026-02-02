@@ -1,5 +1,3 @@
-// import { Link } from "@tanstack/react-router";
-
 import { Link } from "@tanstack/react-router";
 
 function Header() {
@@ -36,14 +34,18 @@ function Header() {
             Changelog
           </a>
         </div>
-        <Link to="/workspace" className="relative z-10">
-          <button className="group relative px-6 py-2.5 bg-neutral-strong cursor-pointer text-primary rounded-full font-bold text-sm overflow-hidden transition-all hover:pr-10">
-            Open App
-            <span className="absolute right-4 opacity-0 group-hover:opacity-100 transition-all text-xl leading-none">
-              →
-            </span>
-          </button>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/login" className="relative z-10">
+            <button className="px-5 py-2.5 text-neutral-strong font-bold text-sm hover:text-neutral-strong/70 transition-colors">
+              Sign In
+            </button>
+          </Link>
+          <Link to="/register" className="relative z-10">
+            <button className="px-6 py-2.5 bg-neutral-strong cursor-pointer text-primary rounded-full font-bold text-sm overflow-hidden transition-all hover:shadow-lg">
+              Get Started
+            </button>
+          </Link>
+        </div>
       </div>
     </nav>
   );

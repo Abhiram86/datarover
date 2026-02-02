@@ -1,4 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { logoutFn, getCurrentUserFn } from "@/utils/auth.functions";
+import { useUserStore } from "@/store/user";
 import {
   MoreVertical,
   Layout,
@@ -10,11 +13,10 @@ import {
   Copy,
   Share2,
   Trash2,
+  LogOut,
 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { deleteWorkspace, getWorkspaces } from "@/utils/workspaces.functions";
-import { useServerFn } from "@tanstack/react-start";
 import {
   queryOptions,
   useMutation,
@@ -30,6 +32,16 @@ const workspaceQuery = queryOptions({
 });
 
 export const Route = createFileRoute("/workspace/")({
+  beforeLoad: async ({ location }) => {
+    const user = await getCurrentUserFn();
+    if (!user) {
+      throw redirect({
+        to: "/login",
+        search: { redirect: location.href },
+      });
+    }
+    return { user };
+  },
   loader: async ({ context: { queryClient } }) => {
     return queryClient.ensureQueryData(workspaceQuery);
   },
@@ -37,7 +49,17 @@ export const Route = createFileRoute("/workspace/")({
 });
 
 function RouteComponent() {
+  const { user } = Route.useRouteContext();
+  const setUser = useUserStore((state) => state.setUser);
   const { success, error } = Route.useLoaderData();
+  
+  // Sync user with Zustand store
+  useEffect(() => {
+    if (user) {
+      setUser(user);
+    }
+  }, [user, setUser]);
+  
   if (!success) {
     return <div>Error: {error.message}</div>;
   }
@@ -53,7 +75,7 @@ function RouteComponent() {
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
-      <WorkspaceListHeader />
+      <WorkspaceListHeader user={user} />
       <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full">
         {/* Header Section */}
         <div className="flex items-end justify-between mb-12">
@@ -111,7 +133,7 @@ interface WorkspaceCardProps {
   lastModified: Date | null;
 }
 
-export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
+const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteWorkspaceFn = useServerFn(deleteWorkspace);
@@ -185,8 +207,8 @@ export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) =>
           </div>
         </div>
       ),
-      { duration: 6000 },
-    ); // Give them slightly more time to decide
+      { duration: 6000 }
+    );
   };
 
   const executeDelete = async (id: string) => {
@@ -199,7 +221,6 @@ export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) =>
     });
   };
 
-  // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -230,7 +251,6 @@ export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) =>
             <Layout size={20} className="text-neutral-strong/60" />
           </div>
 
-          {/* Menu Trigger */}
           <button
             onClick={handleMenuClick}
             className={`p-1 rounded-md transition-colors cursor-pointer ${showMenu ? "bg-neutral-strong/10 text-neutral-strong" : "text-neutral-strong/20 hover:text-neutral-strong"}`}
@@ -249,7 +269,6 @@ export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) =>
         </div>
       </Link>
 
-      {/* Popup Modal / Dropdown */}
       {showMenu && (
         <div
           ref={menuRef}
@@ -273,7 +292,6 @@ export const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) =>
   );
 };
 
-// Sub-component for Menu Items
 interface MenuButtonProps {
   icon: React.ReactNode;
   label: string;
@@ -281,7 +299,12 @@ interface MenuButtonProps {
   onclick?: () => void;
 }
 
-const MenuButton = ({ icon, label, variant = "default", onclick }: MenuButtonProps) => (
+const MenuButton = ({
+  icon,
+  label,
+  variant = "default",
+  onclick,
+}: MenuButtonProps) => (
   <button
     onClick={onclick}
     className={`
@@ -298,11 +321,46 @@ const MenuButton = ({ icon, label, variant = "default", onclick }: MenuButtonPro
   </button>
 );
 
-export const WorkspaceListHeader = () => {
+interface WorkspaceListHeaderProps {
+  user: {
+    userId: string;
+    email: string;
+    name: string;
+  };
+}
+
+const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
+  const logout = useServerFn(logoutFn);
+  const storeLogout = useUserStore((state) => state.logout);
+  const [showLogout, setShowLogout] = useState(false);
+  const logoutRef = useRef<HTMLDivElement>(null);
+
+  const handleLogout = async () => {
+    storeLogout(); // Clear user from Zustand store
+    await logout(); // Server-side logout
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (logoutRef.current && !logoutRef.current.contains(event.target as Node)) {
+        setShowLogout(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const userInitials = user.name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
   return (
     <div className="h-16 w-full bg-primary border-b border-neutral-strong/5 flex items-center justify-between px-8 select-none">
       {/* Left: Branding */}
-      <div className="flex items-center gap-3">
+      <Link to="/" className="flex items-center gap-3 cursor-pointer">
         <div className="w-8 h-8 bg-neutral-strong rounded-lg flex items-center justify-center">
           <div className="w-4 h-4 border-2 border-primary rotate-45" />
         </div>
@@ -314,7 +372,7 @@ export const WorkspaceListHeader = () => {
             Platform
           </span>
         </div>
-      </div>
+      </Link>
 
       {/* Center: Search Bar */}
       <div className="hidden md:flex items-center w-full max-w-md bg-neutral-strong/5 border border-neutral-strong/5 rounded-full px-4 py-1.5 focus-within:border-neutral-strong/20 transition-all">
@@ -334,8 +392,27 @@ export const WorkspaceListHeader = () => {
         <button className="p-2 text-neutral-strong/30 hover:text-neutral-strong transition-colors">
           <Settings size={18} />
         </button>
-        <div className="w-8 h-8 rounded-full bg-neutral-strong/10 border border-neutral-strong/10 flex items-center justify-center text-[10px] font-black">
-          JD
+        <div className="relative" ref={logoutRef}>
+          <button
+            onClick={() => setShowLogout(!showLogout)}
+            className="w-8 h-8 rounded-full bg-neutral-strong/10 border border-neutral-strong/10 flex items-center justify-center text-[10px] font-black hover:bg-neutral-strong/20 transition-colors cursor-pointer"
+            title={user.name}
+          >
+            {userInitials}
+          </button>
+          {showLogout && (
+            <div className="absolute right-0 top-10 w-40 bg-primary border border-neutral-strong/10 rounded-xl shadow-xl shadow-neutral-strong/5 z-50 overflow-hidden">
+              <div className="p-2">
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-bold text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut size={14} />
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -11,3 +11,6 @@ count.txt
 .output
 .vinxi
 todos.json
+tests/
+*.test.ts
+*.test.tsx
