@@ -10,6 +10,7 @@ import { getWorkspace } from "@/utils/workspaces.functions";
 import { useFileStore } from "@/store/file";
 import { queryOptions } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
+import { useConversationStore } from "@/store/conversation";
 
 const workspaceQuery = (id: string) =>
   queryOptions({
@@ -42,6 +43,7 @@ function RouteComponent() {
   useEffect(() => {
     if (loaderData.slug === "new") {
       useFileStore.getState().reset();
+      useConversationStore.getState().reset();
     } else if (loaderData.data?.success && loaderData.data.data?.preview) {
       useFileStore.getState().setPreview(loaderData.data.data.preview);
     }
