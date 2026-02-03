@@ -100,4 +100,46 @@
 
 - `.vscode/settings.json` - Excludes routeTree.gen.ts from search/watcher
 - `drizzle.config.ts` - Drizzle ORM configuration
+- `vitest.config.ts` - Vitest configuration
 - No explicit linting/formatting configs - follow TypeScript strict mode conventions
+
+## AI SDK Integration
+
+- Use `createServerFn` for AI chat endpoints with `stream` response
+- Chat streaming: Parse JSON chunks with type区分 (reasoning vs content)
+- Use `requestAnimationFrame` for batched UI updates during streaming
+- Conversation stores track: id, messages, current stream state
+- Placeholder messages use `temp-${Date.now()}` format for optimistic updates
+- Handle streaming errors gracefully with fallback to plain content parsing
+
+## File Handling
+
+- Parse CSV/Excel with SheetJS (xlsx library)
+- Preview limits: max 2000 rows for data previews
+- File type detection: check both mime type and file extension
+- Supabase storage bucket: `datafiles` with path `data/{workspaceId}`
+- Always return consistent shape: `{ fileName, fileType, columns, rows, totalPreviewRows }`
+
+## Performance Patterns
+
+- Use `React.memo()` for expensive components (e.g., PromptBox)
+- `useCallback` for callback functions passed to server functions
+- `useRef` for direct DOM manipulation (textarea auto-resize)
+- Zustand stores: separate data, UI state, and actions
+- Include reset function in every store for cleanup
+
+## Git Workflow
+
+- Create feature branches for new functionality
+- Squash commits before merging when appropriate
+- Write clear commit messages: "add X feature", "fix Y bug", "refactor Z component"
+- Run tests before committing with `bun run test`
+- Never commit secrets, .env files, or credentials
+
+## Testing
+
+- Place tests alongside source files: `component.tsx` → `component.test.tsx`
+- Use `@testing-library/react` for component tests
+- Mock server functions with `vi.mock()` for isolated testing
+- Test error boundaries and loading states
+- Use `bun run test --watch` for TDD during development
