@@ -230,7 +230,8 @@ export const getMessages = createServerFn({ method: "GET" })
             eq(messagesTable.conversation_id, data),
             eq(messagesTable.workspace_id, data),
           ),
-        );
+        )
+        .orderBy(messagesTable.created_at);
       return {
         success: true,
         data: messages,

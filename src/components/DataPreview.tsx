@@ -1,8 +1,13 @@
-import { AllCommunityModule, ColDef, ModuleRegistry } from "ag-grid-community";
+import {
+  AllCommunityModule,
+  ColDef,
+  ModuleRegistry,
+  themeAlpine,
+} from "ag-grid-community";
 import { useMemo } from "react";
 import { AgGridReact } from "ag-grid-react";
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-quartz.css";
+// import "ag-grid-community/styles/ag-grid.css";
+// import "ag-grid-community/styles/ag-theme-quartz.css";
 import { useFileStore } from "@/store/file";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -66,8 +71,16 @@ export default function DataPreview() {
       </div>
 
       <div className="flex-1 overflow-hidden rounded-lg border border-white/5">
-        <div className="ag-theme-quartz-dark h-full w-full hybrid-grid">
+        <div className="ag-theme-alpine h-full w-full hybrid-grid">
           <AgGridReact
+            theme={themeAlpine.withParams({
+              spacing: 4,
+              rowHeight: 32,
+              headerHeight: 36,
+              backgroundColor: "green", // Grid background
+              foregroundColor: "red", // Text color
+              accentColor: "#3b82f6",
+            })}
             rowData={rows}
             columnDefs={columnDefs}
             defaultColDef={defaultColDef}

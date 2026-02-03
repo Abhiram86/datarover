@@ -52,14 +52,14 @@ function RouteComponent() {
   const { user } = Route.useRouteContext();
   const setUser = useUserStore((state) => state.setUser);
   const { success, error } = Route.useLoaderData();
-  
+
   // Sync user with Zustand store
   useEffect(() => {
     if (user) {
       setUser(user);
     }
   }, [user, setUser]);
-  
+
   if (!success) {
     return <div>Error: {error.message}</div>;
   }
@@ -207,7 +207,7 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
           </div>
         </div>
       ),
-      { duration: 6000 }
+      { duration: 6000 },
     );
   };
 
@@ -263,7 +263,10 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
           <h3 className="text-sm font-bold text-neutral-strong mb-1 truncate pr-4">
             {name}
           </h3>
-          <span className="text-[10px] font-medium text-neutral-strong/40">
+          <span
+            suppressHydrationWarning
+            className="text-[10px] font-medium text-neutral-strong/40"
+          >
             Edited {formatDate(lastModified)}
           </span>
         </div>
@@ -342,7 +345,10 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (logoutRef.current && !logoutRef.current.contains(event.target as Node)) {
+      if (
+        logoutRef.current &&
+        !logoutRef.current.contains(event.target as Node)
+      ) {
         setShowLogout(false);
       }
     };
