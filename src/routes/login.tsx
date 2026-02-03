@@ -27,7 +27,7 @@ function LoginComponent() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const login = useServerFn(loginFn);
-  const setUser = useUserStore((state) => state.setUser);
+  const setUser = useUserStore((s) => s.actions.setUser);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {

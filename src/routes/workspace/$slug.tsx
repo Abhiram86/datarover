@@ -74,7 +74,7 @@ function RouteComponent() {
   const loaderData = Route.useLoaderData();
   console.log("loaderData", loaderData);
   const { user } = useRouteContext({ from: "/workspace/$slug" });
-  const setUser = useUserStore((state) => state.setUser);
+  const setUser = useUserStore((s) => s.actions.setUser);
 
   useEffect(() => {
     if (user) setUser(user);

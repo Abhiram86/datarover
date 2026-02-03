@@ -12,7 +12,7 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const navigate = useNavigate();
   const writeFileToDBFn = useServerFn(writeFileToDB);
   const queryClient = useQueryClient();
-  const { user } = useUserStore();
+  const { user } = useUserStore((s) => s.data);
 
   const mutation = useMutation({
     mutationFn: (data: {

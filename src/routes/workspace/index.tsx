@@ -50,7 +50,7 @@ export const Route = createFileRoute("/workspace/")({
 
 function RouteComponent() {
   const { user } = Route.useRouteContext();
-  const setUser = useUserStore((state) => state.setUser);
+  const setUser = useUserStore((s) => s.actions.setUser);
   const { success, error } = Route.useLoaderData();
 
   // Sync user with Zustand store
@@ -334,7 +334,7 @@ interface WorkspaceListHeaderProps {
 
 const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
   const logout = useServerFn(logoutFn);
-  const storeLogout = useUserStore((state) => state.logout);
+  const storeLogout = useUserStore((s) => s.actions.logout);
   const [showLogout, setShowLogout] = useState(false);
   const logoutRef = useRef<HTMLDivElement>(null);
 

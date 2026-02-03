@@ -10,6 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import appCss from "../styles.css?url";
 import { CustomToaster } from "@/components/Toaster";
+import { UserProvider } from "@/store/user";
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
@@ -45,7 +46,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <div className="min-h-screen bg-primary text-neutral-strong selection:bg-neutral-strong selection:text-primary">
-          {children}
+          <UserProvider>{children}</UserProvider>
           <TanStackDevtools
             config={{
               position: "bottom-right",
