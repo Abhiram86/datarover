@@ -50,6 +50,27 @@
       "when": 1769966013719,
       "tag": "0006_sour_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770065385770,
+      "tag": "0007_absent_fabian_cortez",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1770107731596,
+      "tag": "0008_misty_the_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1770107828116,
+      "tag": "0009_small_morg",
+      "breakpoints": true
     }
   ]
 }

@@ -2,9 +2,9 @@ import { Conversation, Message } from "@/types";
 import { create } from "zustand";
 
 interface ConversationStoreState {
-  conversations: Conversation[];
+  conversation: Conversation | null;
   messages: Message[];
-  setConversations: (conversations: Conversation[]) => void;
+  setConversations: (conversation: Conversation) => void;
   addMessage: (message: Message) => void;
   addStreamMessage: (
     delta: string | { type: "reasoning" | "content"; text: string },
@@ -14,9 +14,9 @@ interface ConversationStoreState {
 }
 
 export const useConversationStore = create<ConversationStoreState>((set) => ({
-  conversations: [],
+  conversation: null,
   messages: [],
-  setConversations: (conversations) => set({ conversations }),
+  setConversations: (conversation) => set({ conversation }),
   addMessage: (message: Message) =>
     set((state) => ({ messages: [...state.messages, message] })),
   addStreamMessage: (
@@ -60,5 +60,5 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
       return { messages };
     }),
   setMessages: (messages) => set({ messages }),
-  reset: () => set({ conversations: [], messages: [] }),
+  reset: () => set({ conversation: null, messages: [] }),
 }));

@@ -6,7 +6,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { useEffect } from "react";
 
 export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const uploadFileFn = useServerFn(uploadFile);
@@ -14,7 +13,7 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const writeFileToDBFn = useServerFn(writeFileToDB);
   const queryClient = useQueryClient();
   const { user } = useUserStore();
-  
+
   const mutation = useMutation({
     mutationFn: (data: {
       id: string | null;
@@ -33,12 +32,13 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
     useFileStore();
 
   // Get user initials for display
-  const userInitials = user?.name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "??";
+  const userInitials =
+    user?.name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "??";
   const handleFileUpload = async () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -73,6 +73,7 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
 
           // Stage 3: Sync with Database
           toast.loading("Finalizing workspace...", { id: toastId });
+          console.log("user from workspace header", user);
           mutation.mutate(
             {
               id: resp.data.perms.workspaceId,
@@ -206,7 +207,7 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
         <button className="text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong transition-colors uppercase tracking-widest">
           Export
         </button>
-        <div 
+        <div
           className="w-7 h-7 rounded-full bg-linear-to-br from-neutral-strong/20 to-neutral-strong/5 border border-neutral-strong/10 flex items-center justify-center text-[10px] font-bold"
           title={user?.name || "User"}
         >

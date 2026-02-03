@@ -1,0 +1,1 @@
+CREATE TYPE "public"."role" AS ENUM('user', 'assistant', 'system', 'tool');

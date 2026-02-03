@@ -1,4 +1,8 @@
-import { createFileRoute, useLoaderData, useRouteContext, redirect } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  useRouteContext,
+  redirect,
+} from "@tanstack/react-router";
 import History from "@/components/Chat/History";
 import DataPreview from "@/components/DataPreview";
 import { Panel } from "@/components/Panels/Panel";
@@ -13,11 +17,24 @@ import { useEffect, useMemo } from "react";
 import { useConversationStore } from "@/store/conversation";
 import { useUserStore } from "@/store/user";
 import { getCurrentUserFn } from "@/utils/auth.functions";
+import { getConversation, getMessages } from "@/utils/chat.functions";
 
 const workspaceQuery = (id: string) =>
   queryOptions({
     queryKey: ["workspace", id],
     queryFn: () => getWorkspace({ data: id }),
+  });
+
+const conversationQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["conversation", id],
+    queryFn: () => getConversation({ data: id }),
+  });
+
+const messagesQuery = (id: string) =>
+  queryOptions({
+    queryKey: ["messages", id],
+    queryFn: () => getMessages({ data: id }),
   });
 
 export const Route = createFileRoute("/workspace/$slug")({
@@ -37,7 +54,12 @@ export const Route = createFileRoute("/workspace/$slug")({
     const slug = params.slug;
     let data = null;
     if (slug !== "new") {
-      data = await queryClient.ensureQueryData(workspaceQuery(slug));
+      const [workspace, conversation, messages] = await Promise.all([
+        queryClient.ensureQueryData(workspaceQuery(slug)),
+        queryClient.ensureQueryData(conversationQuery(slug)),
+        queryClient.ensureQueryData(messagesQuery(slug)),
+      ]);
+      data = { workspace, conversation, messages };
     }
     console.log("slug", slug);
     return {
@@ -49,70 +71,85 @@ export const Route = createFileRoute("/workspace/$slug")({
 });
 
 function RouteComponent() {
-  const loaderData = useLoaderData({ from: "/workspace/$slug" });
+  const loaderData = Route.useLoaderData();
+  console.log("loaderData", loaderData);
   const { user } = useRouteContext({ from: "/workspace/$slug" });
   const setUser = useUserStore((state) => state.setUser);
-  console.log("render check");
 
   useEffect(() => {
-    if (user) {
-      setUser(user);
-    }
+    if (user) setUser(user);
   }, [user, setUser]);
 
   useEffect(() => {
     if (loaderData.slug === "new") {
       useFileStore.getState().reset();
       useConversationStore.getState().reset();
-    } else if (loaderData.data?.success && loaderData.data.data?.preview) {
-      useFileStore.getState().setPreview(loaderData.data.data.preview);
+      return;
     }
-  }, [loaderData.slug, loaderData.data?.success]);
 
-  if (loaderData.data?.error) {
-    if (loaderData.data.error instanceof String) {
-      return <div>Error: {loaderData.data.error}</div>;
-    } else if (loaderData.data.error instanceof Error) {
-      return <div>Error: {loaderData.data.error.message}</div>;
+    const workspaceRes = loaderData.data?.workspace;
+
+    if (workspaceRes?.success && workspaceRes.data?.preview) {
+      useFileStore.getState().setPreview(workspaceRes.data.preview);
     }
-    return <div>Error: Unknown error</div>;
+    if (loaderData.data?.messages?.success) {
+      useConversationStore
+        .getState()
+        .setMessages(loaderData.data.messages!.data);
+    }
+    if (loaderData.data?.conversation?.success) {
+      useConversationStore
+        .getState()
+        .setConversations(loaderData.data.conversation!.data);
+    }
+  }, [loaderData.slug, loaderData.data?.workspace?.success]);
+
+  const workspaceError = loaderData.data?.workspace?.success === false;
+  const messagesError = loaderData.data?.messages?.success === false;
+
+  if (workspaceError) {
+    const err = loaderData.data?.workspace.error;
+    const message =
+      typeof err === "string" ? err : (err?.message ?? "Unknown error");
+    return <div>Error: {message}</div>;
+  }
+
+  if (messagesError) {
+    const message = loaderData.data?.messages.error?.message ?? "Unknown error";
+    return <div>Error: {message}</div>;
   }
 
   const supabase = useMemo(() => {
     return createClient(
       loaderData.env.data.supabaseProjectUrl,
-      loaderData.env.data.supabaseAnonKey
+      loaderData.env.data.supabaseAnonKey,
     );
   }, [
     loaderData.env.data.supabaseProjectUrl,
     loaderData.env.data.supabaseAnonKey,
   ]);
+
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
-      {/* Small Utility Header */}
       <WorkspaceHeader supabase={supabase} />
 
-      {/* Main Resizable Workspace */}
       <div className="flex-1 overflow-hidden p-1">
         <PanelGroup
           direction="horizontal"
           className="rounded-xl overflow-hidden border border-neutral-strong/10"
         >
           <Panel size={25} minSize={20}>
-            {/* Chat UI */}
             <div className="h-full bg-primary-muted/10">
-              <History />
+              <History workspaceId={loaderData.slug} />
             </div>
           </Panel>
 
           <Panel minSize={25} size={80}>
             <PanelGroup direction="vertical">
               <Panel size={70}>
-                {/* Data Grid */}
                 <DataPreview />
               </Panel>
               <Panel size={30}>
-                {/* Code Editor */}
                 <div className="h-full bg-[#020617] p-4 font-mono text-sm text-blue-300">
                   <span className="text-gray-500">
                     # Start typing analysis...

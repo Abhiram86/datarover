@@ -4,6 +4,7 @@ import { parseDataFromFile, uploadToSupabase } from "./files.server";
 import { db } from "./db.server";
 import { workspacesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getCurrentUserFromCookie } from "./jwt.server";
 
 const fileSchema = z
   .instanceof(FormData)
@@ -21,7 +22,20 @@ export const uploadFile = createServerFn({ method: "POST" })
     console.log("name: ", file.name);
 
     try {
-      const perms = await uploadToSupabase();
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          data: null,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      const perms = await uploadToSupabase({
+        fileName: file.name,
+        fileType: file.type,
+        userId: user.userId,
+      });
 
       if (!perms.permission) {
         return {

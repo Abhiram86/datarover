@@ -1,37 +1,22 @@
 export interface Conversation {
   id: string;
-  workspaceId: string;
-  title: string;
-  createdAt: Date;
-  updatedAt: Date;
+  workspace_id: string;
+  title: string | null;
+  created_at: Date | null;
+  updated_at: Date | null;
 }
 
-export type ChatRole = "user" | "assistant" | "tool";
+export type MessageRole = "user" | "assistant" | "tool" | "system";
 
-export interface BaseMessage {
+export type Message = {
   id: string;
-  conversationId: string;
-  role: ChatRole;
-  reasoning?: string;
+  workspace_id: string;
+  conversation_id: string;
+  role: MessageRole;
+  reasoning: string | null;
   content: string;
-  createdAt: Date;
-}
-
-export interface UserMessage extends BaseMessage {
-  role: "user";
-  promptTokens: number;
-}
-
-export interface AssistantMessage extends BaseMessage {
-  role: "assistant";
-  isComplete: boolean;
-  completionTokens: number;
-}
-
-export interface ToolMessage extends BaseMessage {
-  role: "tool";
-  toolName: string;
-  toolCallId?: string;
-}
-
-export type Message = UserMessage | AssistantMessage | ToolMessage;
+  is_complete: boolean | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  created_at: Date | null;
+};

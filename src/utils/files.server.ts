@@ -108,14 +108,24 @@ export async function parseDataFromFile(file: File): Promise<ParsedPreview> {
   };
 }
 
-export async function uploadToSupabase(): Promise<UploadPermission> {
+interface UploadToSupabaseParams {
+  fileName: string;
+  fileType: string;
+  userId: string;
+}
+
+export async function uploadToSupabase({
+  fileName,
+  fileType,
+  userId,
+}: UploadToSupabaseParams): Promise<UploadPermission> {
   try {
     const newW = await db
       .insert(workspacesTable)
       .values({
-        file_type: "temp",
-        name: "Untitled_Dataset.csv",
-        user_id: "7ceb974a-e22d-4923-8398-aac2c0c10ec6",
+        file_type: fileType,
+        name: fileName,
+        user_id: userId,
       })
       .returning({ id: workspacesTable.id });
     const { data, error } = await storage.createSignedUploadUrl(

@@ -1,6 +1,7 @@
 import {
   boolean,
   integer,
+  pgEnum,
   // jsonb,
   pgTable,
   text,
@@ -40,28 +41,33 @@ export const conversationsTable = pgTable("conversations", {
   workspace_id: uuid("workspaceId")
     .notNull()
     .references(() => workspacesTable.id, { onDelete: "cascade" }),
-  title: varchar("title", { length: 255 }),
+  title: varchar("title", { length: 255 }).notNull(),
   created_at: timestamp("createdAt", { withTimezone: true }).defaultNow(),
   updated_at: timestamp("updatedAt", { withTimezone: true }).defaultNow(),
   // For resuming sessions
   // context_summary: text("contextSummary"), // LLM-generated summary of what was done
 });
 
+export const roleEnum = pgEnum("role", ["user", "assistant", "system", "tool"]);
+
 export const messagesTable = pgTable("messages", {
   id: uuid("id").defaultRandom().primaryKey(),
+  workspace_id: uuid("workspaceId")
+    .notNull()
+    .references(() => workspacesTable.id, { onDelete: "cascade" }),
   conversation_id: uuid("conversationId")
     .notNull()
     .references(() => conversationsTable.id, { onDelete: "cascade" }),
   // 'user', 'assistant', 'system', 'tool' (tool = result message)
-  role: varchar("role", { length: 20 }).notNull(),
+  role: roleEnum("role").default("user").notNull(),
   // Text content (user query or LLM explanation)
-  reasoning: text("reasoning").notNull(),
+  reasoning: text("reasoning"),
   content: text("content").notNull(),
   // For streaming: track if message is complete
   is_complete: boolean("isComplete").default(false),
   // Token counts for cost tracking
-  prompt_tokens: integer("promptTokens").notNull(),
-  completion_tokens: integer("completionTokens").notNull(),
+  prompt_tokens: integer("promptTokens"),
+  completion_tokens: integer("completionTokens"),
   created_at: timestamp("createdAt", { withTimezone: true }).defaultNow(),
 });
 
@@ -77,6 +83,7 @@ export const workspacesRelations = relations(
       references: [usersTable.id],
     }),
     conversations: many(conversationsTable),
+    messages: many(messagesTable),
   }),
 );
 
@@ -92,6 +99,10 @@ export const conversationsRelations = relations(
 );
 
 export const messagesRelations = relations(messagesTable, ({ one }) => ({
+  workspace: one(workspacesTable, {
+    fields: [messagesTable.workspace_id],
+    references: [workspacesTable.id],
+  }),
   conversation: one(conversationsTable, {
     fields: [messagesTable.conversation_id],
     references: [conversationsTable.id],
