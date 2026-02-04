@@ -1,6 +1,6 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { logoutFn, getCurrentUserFn } from "@/utils/auth.functions";
+import { logoutFn } from "@/utils/auth.functions";
 import { useUserStore } from "@/store/user";
 import {
   MoreVertical,
@@ -31,53 +31,51 @@ const workspaceQuery = queryOptions({
   queryFn: getWorkspaces,
 });
 
-export const Route = createFileRoute("/workspace/")({
-  beforeLoad: async ({ location }) => {
-    const user = await getCurrentUserFn();
-    if (!user) {
-      throw redirect({
-        to: "/login",
-        search: { redirect: location.href },
-      });
-    }
-    return { user };
-  },
-  loader: async ({ context: { queryClient } }) => {
-    return queryClient.ensureQueryData(workspaceQuery);
-  },
+export const Route = createFileRoute("/_authed/workspace/")({
   component: RouteComponent,
 });
 
 function RouteComponent() {
   const { user } = Route.useRouteContext();
-  const setUser = useUserStore((s) => s.actions.setUser);
-  const { success, error } = Route.useLoaderData();
-
-  // Sync user with Zustand store
-  useEffect(() => {
-    if (user) {
-      setUser(user);
-    }
-  }, [user, setUser]);
-
-  if (!success) {
-    return <div>Error: {error.message}</div>;
-  }
 
   const workspacesQuery = useQuery(workspaceQuery);
 
-  if (!workspacesQuery.data?.success) {
+  if (workspacesQuery.isLoading) {
+    return <WorkspaceGridSkeleton />;
+  }
+
+  if (workspacesQuery.error) {
     return (
-      <div>Error: {workspacesQuery.data?.error.message || "Unknown error"}</div>
+      <div className="h-screen w-full flex flex-col bg-primary p-8 max-w-7xl mx-auto">
+        <WorkspaceListHeader user={user} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-neutral-strong/60 text-sm">
+            Failed to load workspaces
+          </div>
+        </div>
+      </div>
     );
   }
+
+  if (!workspacesQuery.data?.success) {
+    return (
+      <div className="h-screen w-full flex flex-col bg-primary p-8 max-w-7xl mx-auto">
+        <WorkspaceListHeader user={user} />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-neutral-strong/60 text-sm">
+            {workspacesQuery.data?.error.message || "Unknown error"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const workspaces = workspacesQuery.data.data;
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
       <WorkspaceListHeader user={user} />
       <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full">
-        {/* Header Section */}
         <div className="flex items-end justify-between mb-12">
           <div>
             <h1 className="text-2xl font-black text-neutral-strong tracking-tight">
@@ -100,9 +98,7 @@ function RouteComponent() {
           </Link>
         </div>
 
-        {/* Grid Section */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {/* Create New Prompt/Empty State Card */}
           <Link
             to="/workspace/$slug"
             params={{
@@ -339,8 +335,8 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
   const logoutRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = async () => {
-    storeLogout(); // Clear user from Zustand store
-    await logout(); // Server-side logout
+    storeLogout();
+    await logout();
   };
 
   useEffect(() => {
@@ -365,7 +361,6 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
 
   return (
     <div className="h-16 w-full bg-primary border-b border-neutral-strong/5 flex items-center justify-between px-8 select-none">
-      {/* Left: Branding */}
       <Link to="/" className="flex items-center gap-3 cursor-pointer">
         <div className="w-8 h-8 bg-neutral-strong rounded-lg flex items-center justify-center">
           <div className="w-4 h-4 border-2 border-primary rotate-45" />
@@ -380,7 +375,6 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
         </div>
       </Link>
 
-      {/* Center: Search Bar */}
       <div className="hidden md:flex items-center w-full max-w-md bg-neutral-strong/5 border border-neutral-strong/5 rounded-full px-4 py-1.5 focus-within:border-neutral-strong/20 transition-all">
         <Search size={14} className="text-neutral-strong/30" />
         <input
@@ -390,7 +384,6 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
         />
       </div>
 
-      {/* Right: User Settings */}
       <div className="flex items-center gap-4">
         <button className="p-2 text-neutral-strong/30 hover:text-neutral-strong transition-colors">
           <Bell size={18} />
@@ -424,3 +417,32 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
     </div>
   );
 };
+
+const WorkspaceGridSkeleton = () => (
+  <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
+    <div className="h-16 w-full bg-primary border-b border-neutral-strong/5 px-8">
+      <div className="h-6 w-32 bg-neutral-strong/10 rounded animate-pulse mt-4" />
+    </div>
+    <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full">
+      <div className="flex items-center justify-between mb-12">
+        <div className="h-8 w-40 bg-neutral-strong/10 rounded animate-pulse" />
+        <div className="h-10 w-36 bg-neutral-strong/10 rounded-xl animate-pulse" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+          <div
+            key={i}
+            className="flex flex-col bg-neutral-strong/2 border border-neutral-strong/10 rounded-2xl p-5 h-45 animate-pulse"
+          >
+            <div className="flex justify-between items-start mb-8">
+              <div className="w-10 h-10 rounded-xl bg-neutral-strong/5" />
+              <div className="w-6 h-6 rounded-md bg-neutral-strong/5" />
+            </div>
+            <div className="h-5 w-32 bg-neutral-strong/5 rounded mb-2" />
+            <div className="h-3 w-24 bg-neutral-strong/3 rounded" />
+          </div>
+        ))}
+      </div>
+    </main>
+  </div>
+);

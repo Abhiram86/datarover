@@ -16,6 +16,11 @@ export const PromptBox = React.memo(
     const converation = useConversationStore((s) => s.conversation);
     const addMessage = useConversationStore((s) => s.addMessage);
     const addStreamMessage = useConversationStore((s) => s.addStreamMessage);
+    const updateMessage = useConversationStore((s) => s.updateMessage);
+    const updateMessagesConversationId = useConversationStore(
+      (s) => s.updateMessagesConversationId,
+    );
+    const removeMessage = useConversationStore((s) => s.removeMessage);
     const newConvo = useServerFn(newConversation);
     const addMessageServer = useServerFn(newMessage);
 
@@ -38,9 +43,9 @@ export const PromptBox = React.memo(
 
         let fullReasoning = "";
         let fullContent = "";
+        let incompleteChunk = ""; // Buffer for incomplete JSON
 
         const flush = () => {
-          // Update store with both reasoning and content
           if (reasoningBuffer) {
             addStreamMessage({ type: "reasoning", text: reasoningBuffer });
             reasoningBuffer = "";
@@ -53,9 +58,41 @@ export const PromptBox = React.memo(
         };
 
         for await (const chunk of stream) {
-          try {
-            const parsed = JSON.parse(chunk);
+          // Combine with any incomplete chunk from previous iteration
+          const fullChunk = incompleteChunk + chunk;
+          const lines = fullChunk.split("\n");
 
+          // Last line might be incomplete, save it for next iteration
+          incompleteChunk = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue; // Skip empty lines
+
+            try {
+              const parsed = JSON.parse(line);
+
+              if (parsed.type === "reasoning") {
+                reasoningBuffer += parsed.text;
+                fullReasoning += parsed.text;
+              } else if (parsed.type === "content") {
+                contentBuffer += parsed.text;
+                fullContent += parsed.text;
+              }
+            } catch (e) {
+              console.error("Failed to parse line:", line, e);
+            }
+          }
+
+          // Schedule update at most once per frame
+          if (!frameId) {
+            frameId = requestAnimationFrame(flush);
+          }
+        }
+
+        // Process any remaining incomplete chunk
+        if (incompleteChunk.trim()) {
+          try {
+            const parsed = JSON.parse(incompleteChunk);
             if (parsed.type === "reasoning") {
               reasoningBuffer += parsed.text;
               fullReasoning += parsed.text;
@@ -64,14 +101,7 @@ export const PromptBox = React.memo(
               fullContent += parsed.text;
             }
           } catch (e) {
-            // Fallback: if not JSON, treat as plain content
-            contentBuffer += chunk;
-            fullContent += chunk;
-          }
-
-          // Schedule update at most once per frame
-          if (!frameId) {
-            frameId = requestAnimationFrame(flush);
+            console.error("Failed to parse final chunk:", incompleteChunk, e);
           }
         }
 
@@ -91,67 +121,131 @@ export const PromptBox = React.memo(
       if (!input.trim()) return;
       const prompt = input;
       setInput("");
+
       let conversation_id = converation?.id;
+
       try {
+        // 1. Create conversation if needed (optimistically)
         if (!converation) {
-          const resp = await newConvo({
+          const tempConvoId = `temp-convo-${Date.now()}`;
+          conversation_id = tempConvoId;
+
+          // Optimistically add to UI
+          const optimisticConvo = {
+            id: tempConvoId,
+            workspace_id: workspaceId,
+            title: "New Conversation",
+            updated_at: new Date(),
+            created_at: new Date(),
+          };
+          useConversationStore.getState().setConversations(optimisticConvo);
+
+          // Create in background and update with real ID
+          newConvo({
             data: { workspace_id: workspaceId, title: "New Conversation" },
+          })
+            .then((resp) => {
+              conversation_id = resp.data.id;
+              useConversationStore.getState().setConversations(resp.data);
+              // Update all temporary messages with real conversation_id
+              updateMessagesConversationId(tempConvoId, resp.data.id);
+            })
+            .catch((error) => {
+              console.error(error);
+              toast.error("Error creating conversation");
+              // Optionally remove optimistic updates
+            });
+        }
+
+        // 2. Optimistically add user message to UI immediately
+        const tempUserId = `temp-user-${Date.now()}`;
+        const optimisticUserMessage = {
+          id: tempUserId,
+          workspace_id: workspaceId,
+          conversation_id: conversation_id!,
+          role: "user" as const,
+          content: prompt,
+          reasoning: null,
+          is_complete: false,
+          prompt_tokens: null,
+          completion_tokens: null,
+          created_at: new Date(),
+        };
+        addMessage(optimisticUserMessage);
+
+        // 3. Optimistically add assistant placeholder
+        const tempAssistantId = `temp-assistant-${Date.now()}`;
+        const assistantPlaceholder = {
+          id: tempAssistantId,
+          workspace_id: workspaceId,
+          conversation_id: conversation_id!,
+          role: "assistant" as const,
+          content: "",
+          reasoning: null,
+          is_complete: false,
+          prompt_tokens: null,
+          completion_tokens: null,
+          created_at: null,
+        };
+        addMessage(assistantPlaceholder);
+
+        // 4. Save user message in background
+        addMessageServer({
+          data: [
+            {
+              workspace_id: workspaceId,
+              conversation_id: conversation_id!,
+              role: "user",
+              content: prompt,
+              prompt_tokens: 0,
+            },
+          ],
+        })
+          .then((messages) => {
+            // Update with real message from server
+            updateMessage(tempUserId, messages.data![0]);
+          })
+          .catch((error) => {
+            console.error(error);
+            toast.error("Error saving message");
+            // Mark message as failed or remove it
+            removeMessage(tempUserId);
           });
-          useConversationStore.getState().setConversations(resp.data);
-          conversation_id = resp.data.id;
-        }
-        try {
-          const userMessage = {
-            workspace_id: workspaceId,
-            conversation_id: conversation_id,
-            role: "user",
-            content: prompt,
-            prompt_tokens: 0,
-          };
-          const messages = await addMessageServer({ data: [userMessage] });
-          addMessage({ ...messages.data![0], role: "user" });
-        } catch (error) {
-          console.error(error);
-          toast.error("Error sending message. Please try again.");
-          return;
-        }
 
+        // 5. Stream assistant response
         try {
-          if (!conversation_id) return;
-          const assistantPlaceholder = {
-            id: `temp-${Date.now()}`,
-            workspace_id: workspaceId,
-            conversation_id: conversation_id,
-            role: "assistant" as const,
-            content: "",
-            reasoning: null,
-            is_complete: false,
-            prompt_tokens: null,
-            completion_tokens: null,
-            created_at: null,
-          };
-          addMessage(assistantPlaceholder);
-
           const { reasoning, content } = await readChatStream(prompt);
+
+          // Save assistant message
           const assistantMessage = {
             workspace_id: workspaceId,
-            conversation_id: conversation_id,
+            conversation_id: conversation_id!,
             role: "assistant",
             content: content,
             completion_tokens: 0,
-            is_complete: false,
+            is_complete: true,
             reasoning: reasoning,
           };
-          await addMessageServer({ data: [assistantMessage] });
 
-          toast.success("Message sent!");
+          const savedMessage = await addMessageServer({
+            data: [assistantMessage],
+          });
+
+          // Update placeholder with real server data
+          updateMessage(tempAssistantId, savedMessage.data![0]);
         } catch (error) {
           console.error(error);
-          toast.error("Error sending message. Please try again.");
+          toast.error("Error getting response");
+          // Mark assistant message as failed
+          updateMessage(tempAssistantId, {
+            ...assistantPlaceholder,
+            content: "Error: Failed to get response",
+            is_complete: true,
+          });
         }
       } catch (error) {
         console.error(error);
-        toast.error("Error creating conversation. Please try again.");
+        toast.error("Something went wrong");
       }
     }, [input, converation?.id, addMessage, readChatStream]);
 

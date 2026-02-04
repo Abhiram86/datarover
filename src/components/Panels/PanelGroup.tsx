@@ -60,13 +60,16 @@ export const PanelGroup = ({
   className = "",
 }: PanelGroupProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sizes, setSizes] = useState<number[]>([]);
-
-  // Initialize sizes equally if not provided
-  useEffect(() => {
+  const [sizes, setSizes] = useState<number[]>(() => {
     const count = React.Children.count(children);
-    setSizes(new Array(count).fill(100 / count));
-  }, [children]);
+    const initialSizes: number[] = [];
+    React.Children.forEach(children, (child) => {
+      if (React.isValidElement<ResizableChildProps>(child)) {
+        initialSizes.push(child.props.size || 100 / count);
+      }
+    });
+    return initialSizes.length > 0 ? initialSizes : new Array(count).fill(100 / count);
+  });
 
   const handleResize = useCallback(
     (index: number, event: MouseEvent) => {

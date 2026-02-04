@@ -34,13 +34,13 @@ code {
   /* Hybrid Grid Styling: Non-whitish, integrated look */
   .hybrid-grid {
     /* Use the deep dark from your code editor */
-    --ag-background-color: #020617;
-    --ag-header-background-color: #0a0f1d;
-    --ag-odd-row-background-color: #03081c;
+    --ag-background-color: #f8fceb;
+    --ag-header-background-color: #f1f5e1;
+    --ag-odd-row-background-color: #f8fceb;
 
     /* Text colors - muted blue/gray for better readability in dark mode */
-    --ag-foreground-color: #94a3b8;
-    --ag-header-foreground-color: #64748b;
+    --ag-foreground-color: black;
+    --ag-header-foreground-color: black;
 
     /* Borders - very subtle so it doesn't look "boxy" */
     --ag-border-color: rgba(255, 255, 255, 0.05);

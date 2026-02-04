@@ -18,7 +18,8 @@ export const generalChatStream = createServerFn({ method: "POST" })
     return prompt;
   })
   .handler(async function* ({ data }) {
-    yield "";
+    // REMOVE the initial yield "" - this causes issues
+    // yield "";
 
     const completion = await client.chat.completions.create({
       model: "z-ai/glm4.7",
@@ -62,24 +63,27 @@ export const generalChatStream = createServerFn({ method: "POST" })
         const now = Date.now();
         if (now - lastFlush > 100) {
           if (reasoningBatch) {
-            yield JSON.stringify({ type: "reasoning", text: reasoningBatch });
+            yield JSON.stringify({ type: "reasoning", text: reasoningBatch }) +
+              "\n"; // Add newline delimiter
             reasoningBatch = "";
           }
           if (contentBatch) {
-            yield JSON.stringify({ type: "content", text: contentBatch });
+            yield JSON.stringify({ type: "content", text: contentBatch }) +
+              "\n"; // Add newline delimiter
             contentBatch = "";
           }
           lastFlush = now;
         }
       }
     } finally {
-    }
-
-    if (reasoningBatch) {
-      yield JSON.stringify({ type: "reasoning", text: reasoningBatch });
-    }
-    if (contentBatch) {
-      yield JSON.stringify({ type: "content", text: contentBatch });
+      // Final flush
+      if (reasoningBatch) {
+        yield JSON.stringify({ type: "reasoning", text: reasoningBatch }) +
+          "\n";
+      }
+      if (contentBatch) {
+        yield JSON.stringify({ type: "content", text: contentBatch }) + "\n";
+      }
     }
   });
 

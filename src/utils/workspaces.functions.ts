@@ -87,6 +87,66 @@ export const getWorkspace = createServerFn({ method: "POST" })
         };
       }
 
+      return {
+        success: true,
+        data: {
+          workspace: workspace[0],
+        },
+      };
+    } catch (error) {
+      console.error(error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? { message: error.message }
+            : { message: "Unknown error" },
+      };
+    }
+  });
+
+export const getWorkspacePreview = createServerFn({ method: "POST" })
+  .inputValidator((id) => {
+    if (typeof id !== "string") {
+      return { success: false, error: "Invalid workspace ID" };
+    }
+    return { success: true, id: id };
+  })
+  .handler(async ({ data }) => {
+    if (data.error) {
+      console.error(data.error);
+      return {
+        success: false,
+        error: data.error,
+      };
+    }
+
+    try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      const workspace = await db
+        .select({
+          id: workspacesTable.id,
+          name: workspacesTable.name,
+          fileType: workspacesTable.file_type,
+        })
+        .from(workspacesTable)
+        .where(eq(workspacesTable.id, data.id!))
+        .limit(1);
+
+      if (workspace.length === 0) {
+        return {
+          success: false,
+          error: { message: "Workspace not found" },
+        };
+      }
+
       const { data: blob, error } = await storage.download(`data/${data.id}`);
       if (error) {
         return {
@@ -104,10 +164,7 @@ export const getWorkspace = createServerFn({ method: "POST" })
           : await parseExcelPreview(previewFile);
       return {
         success: true,
-        data: {
-          workspace: workspace[0],
-          preview,
-        },
+        data: preview,
       };
     } catch (error) {
       console.error(error);
