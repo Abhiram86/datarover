@@ -68,7 +68,9 @@ export const PanelGroup = ({
         initialSizes.push(child.props.size || 100 / count);
       }
     });
-    return initialSizes.length > 0 ? initialSizes : new Array(count).fill(100 / count);
+    if (initialSizes.length > 0) return initialSizes;
+    if (count === 0) return [];
+    return new Array(count).fill(100 / count);
   });
 
   const handleResize = useCallback(

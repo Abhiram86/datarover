@@ -38,9 +38,9 @@ code {
     --ag-header-background-color: #f1f5e1;
     --ag-odd-row-background-color: #f8fceb;
 
-    /* Text colors - muted blue/gray for better readability in dark mode */
-    --ag-foreground-color: black;
-    --ag-header-foreground-color: black;
+    /* Text colors - muted blue/gray for better readability */
+    --ag-foreground-color: #334155;
+    --ag-header-foreground-color: #0f172a;
 
     /* Borders - very subtle so it doesn't look "boxy" */
     --ag-border-color: rgba(255, 255, 255, 0.05);

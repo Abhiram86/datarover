@@ -28,6 +28,7 @@ export const generalChatStream = createServerFn({ method: "POST" })
         { role: "user", content: data },
       ],
       stream: true,
+      stream_options: { include_usage: true },
       temperature: 1,
       top_p: 1,
       max_tokens: 16384,
@@ -43,10 +44,19 @@ export const generalChatStream = createServerFn({ method: "POST" })
     let reasoningBatch = "";
     let contentBatch = "";
     let lastFlush = Date.now();
+    let promptTokens = 0;
+    let completionTokens = 0;
 
     try {
       for await (const chunk of completion) {
-        if (!chunk.choices || chunk.choices.length === 0) continue;
+        // Check for final chunk with usage data
+        if (!chunk.choices || chunk.choices.length === 0) {
+          if (chunk.usage) {
+            promptTokens = chunk.usage.prompt_tokens ?? 0;
+            completionTokens = chunk.usage.completion_tokens ?? 0;
+          }
+          continue;
+        }
 
         const delta = chunk.choices[0]?.delta;
         if (!delta) continue;
@@ -84,6 +94,12 @@ export const generalChatStream = createServerFn({ method: "POST" })
       if (contentBatch) {
         yield JSON.stringify({ type: "content", text: contentBatch }) + "\n";
       }
+      // Yield token usage data
+      yield JSON.stringify({
+        type: "usage",
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+      }) + "\n";
     }
   });
 

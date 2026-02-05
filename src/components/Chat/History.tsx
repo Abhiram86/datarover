@@ -1,6 +1,7 @@
 import { useConversationStore } from "@/store/conversation";
 import { PromptBox } from "./PromptBox";
 import { Markdown } from "../Markdown";
+import { HistorySkeleton } from "@/components/skeletons/HistorySkeleton";
 import { ChevronDown, Brain } from "lucide-react";
 import { useState, memo, useMemo, useEffect } from "react";
 import type { Message } from "@/types";
@@ -42,28 +43,71 @@ MessageItem.displayName = "MessageItem";
 
 interface HistoryProps {
   workspaceId: string;
+  initialConversation?: {
+    id: string;
+    workspace_id: string;
+    title: string | null;
+    created_at: Date | null;
+    updated_at: Date | null;
+  } | null;
+  initialMessages?: {
+    id: string;
+    workspace_id: string;
+    conversation_id: string;
+    role: "user" | "assistant" | "tool" | "system";
+    content: string;
+    reasoning: string | null;
+    is_complete: boolean | null;
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    created_at: Date | null;
+  }[];
 }
 
-const History = ({ workspaceId }: HistoryProps) => {
+const History = ({
+  workspaceId,
+  initialConversation,
+  initialMessages,
+}: HistoryProps) => {
   const messages = useConversationStore((s) => s.messages);
   const setMessages = useConversationStore((s) => s.setMessages);
   const setConversations = useConversationStore((s) => s.setConversations);
 
+  // Initialize with server-side data
+  useEffect(() => {
+    if (initialConversation) {
+      setConversations(initialConversation);
+    }
+    if (initialMessages) {
+      setMessages(initialMessages);
+    }
+  }, [workspaceId, initialConversation, initialMessages, setConversations, setMessages]);
+
+  // Still fetch for reactivity (e.g., after mutations)
   const getConversationFn = useServerFn(getConversation);
   const getMessagesFn = useServerFn(getMessages);
 
-  const { data: conversationData, isLoading: conversationLoading } = useQuery({
+  const {
+    data: conversationData,
+    isLoading: conversationLoading,
+    error: conversationError,
+  } = useQuery({
     queryKey: ["conversation", workspaceId],
     queryFn: () => getConversationFn({ data: workspaceId }),
-    enabled: workspaceId !== "new",
+    enabled: workspaceId !== "new" && !initialConversation,
   });
 
-  const { data: messagesData, isLoading: messagesLoading } = useQuery({
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    error: messagesError,
+  } = useQuery({
     queryKey: ["messages", workspaceId],
     queryFn: () => getMessagesFn({ data: workspaceId }),
-    enabled: workspaceId !== "new",
+    enabled: workspaceId !== "new" && !initialMessages,
   });
 
+  // Update store when fresh data comes in
   useEffect(() => {
     if (conversationData?.success && conversationData.data) {
       setConversations(conversationData.data);
@@ -76,8 +120,21 @@ const History = ({ workspaceId }: HistoryProps) => {
     }
   }, [messagesData, setMessages]);
 
+  // Show error toast when queries fail
+  useEffect(() => {
+    if (conversationError) {
+      console.error("Failed to load conversation:", conversationError);
+    }
+    if (messagesError) {
+      console.error("Failed to load messages:", messagesError);
+    }
+  }, [conversationError, messagesError]);
+
   const isLoading =
-    workspaceId !== "new" && (conversationLoading || messagesLoading);
+    workspaceId !== "new" &&
+    !initialConversation &&
+    (conversationLoading || messagesLoading);
+  const hasError = conversationError || messagesError;
   const memoizedMessages = useMemo(() => messages, [messages]);
 
   return (
@@ -91,6 +148,11 @@ const History = ({ workspaceId }: HistoryProps) => {
       <div className="flex-1 overflow-hidden">
         {isLoading ? (
           <HistorySkeleton />
+        ) : hasError ? (
+          <ErrorState
+            message="Failed to load chat history"
+            onRetry={() => window.location.reload()}
+          />
         ) : (
           <div
             className="h-full overflow-y-auto p-4 space-y-8 scrollbar-thin
@@ -116,37 +178,7 @@ const History = ({ workspaceId }: HistoryProps) => {
   );
 };
 
-export const HistorySkeleton = () => (
-  <div className="h-full w-full p-4 space-y-8 animate-pulse overflow-hidden">
-    {/* User Message Skeleton */}
-    <div className="flex flex-col items-end space-y-2">
-      <div className="h-3 w-12 bg-neutral-strong/10 rounded" />
-      <div className="w-[70%] h-12 bg-slate-800/40 rounded-2xl rounded-tr-none" />
-    </div>
-
-    {/* Assistant Message Skeleton with Reasoning */}
-    <div className="flex flex-col items-start space-y-3">
-      <div className="h-3 w-16 bg-neutral-strong/10 rounded" />
-      {/* Reasoning Mock */}
-      <div className="flex items-center gap-2 ml-1">
-        <div className="w-3 h-3 bg-neutral-strong/10 rounded-full" />
-        <div className="h-2 w-24 bg-neutral-strong/10 rounded" />
-      </div>
-      {/* Content Mock */}
-      <div className="space-y-2 w-full">
-        <div className="h-4 w-[90%] bg-neutral-strong/5 rounded" />
-        <div className="h-4 w-[85%] bg-neutral-strong/5 rounded" />
-        <div className="h-4 w-[40%] bg-neutral-strong/5 rounded" />
-      </div>
-    </div>
-
-    {/* Another User Message */}
-    <div className="flex flex-col items-end space-y-2">
-      <div className="h-3 w-10 bg-neutral-strong/10 rounded" />
-      <div className="w-[50%] h-10 bg-slate-800/40 rounded-2xl rounded-tr-none" />
-    </div>
-  </div>
-);
+export { HistorySkeleton } from "@/components/skeletons/HistorySkeleton";
 
 const ReasoningDropdown = memo(
   ({
@@ -209,5 +241,40 @@ const ReasoningDropdown = memo(
   },
 );
 ReasoningDropdown.displayName = "ReasoningDropdown";
+
+const ErrorState = ({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) => (
+  <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
+    <div className="text-neutral-strong/40 mb-4">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" x2="12" y1="8" y2="12" />
+        <line x1="12" x2="12.01" y1="16" y2="16" />
+      </svg>
+    </div>
+    <p className="text-sm text-neutral-strong/60 mb-4">{message}</p>
+    {onRetry && (
+      <button
+        onClick={onRetry}
+        className="px-4 py-2 text-xs font-medium text-primary bg-neutral-strong/80 rounded-lg hover:bg-neutral-strong transition-colors"
+      >
+        Retry
+      </button>
+    )}
+  </div>
+);
 
 export default History;
