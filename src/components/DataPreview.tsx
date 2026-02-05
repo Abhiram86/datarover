@@ -6,6 +6,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useDuckDBStore } from "@/store/duckdb";
 import { DataPreviewSkeleton } from "@/components/skeletons/DataPreviewSkeleton";
 import { getWorkspace } from "@/utils/workspaces.functions";
+import { useFileStore } from "@/store/file";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -137,6 +138,14 @@ export default function DataPreview({
     if (!fileQuery.data) return;
     if (buffer) return;
     if (!isInitialized) return;
+
+    useFileStore.getState().setPreview({
+      fileName: workspaceQuery.data?.data?.workspace.name ?? "",
+      fileType: workspaceQuery.data?.data?.workspace.fileType ?? "",
+      columns: columnNames,
+      rows: rows,
+      totalPreviewRows: rowCount,
+    });
 
     (async () => {
       await loadParquet(fileQuery.data);

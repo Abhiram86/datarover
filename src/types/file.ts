@@ -1,4 +1,4 @@
-export type FileType = "csv" | "excel" | "unknown";
+export type FileType = "csv" | "excel" | "parquet" | {};
 
 export type PreviewRow = Record<string, any>;
 
