@@ -1,6 +1,6 @@
 import { useFileStore } from "@/store/file";
 import { useUserStore } from "@/store/user";
-import { uploadFile, writeFileToDB } from "@/utils/files.functions";
+import { uploadFile, writeFileToDB, convertAndUploadFile } from "@/utils/files.functions";
 import type { WorkspaceHeaderProps } from "@/types/server";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 
 export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const uploadFileFn = useServerFn(uploadFile);
+  const convertAndUploadFileFn = useServerFn(convertAndUploadFile);
   const navigate = useNavigate();
   const writeFileToDBFn = useServerFn(writeFileToDB);
   const queryClient = useQueryClient();
@@ -42,14 +43,19 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const handleFileUpload = async () => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".csv,.xlsx,.xls";
+    input.accept = ".csv,.xlsx,.xls,.parquet";
 
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
 
+      // Check if file is already parquet
+      const isParquet = file.name.toLowerCase().endsWith(".parquet");
+
       // 1. Initialize the loading toast
-      const toastId = toast.loading("Initializing secure upload...");
+      const toastId = toast.loading(
+        isParquet ? "Initializing secure upload..." : "Converting to Parquet format..."
+      );
 
       const formData = new FormData();
       formData.append("file", file);
@@ -57,49 +63,82 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
       try {
         setUploading(true);
 
-        // Stage 1: Get Permissions
-        const resp = await uploadFileFn({ data: formData });
+        if (isParquet) {
+          // Direct upload for parquet files
+          const resp = await uploadFileFn({ data: formData });
 
-        if (resp.success && resp.data.perms.permission) {
-          // Update toast for the next stage
-          toast.loading("Transferring file to storage...", { id: toastId });
+          if (resp.success && resp.data.perms.permission) {
+            toast.loading("Transferring file to storage...", { id: toastId });
 
-          // Stage 2: Storage Upload
-          await storage.uploadToSignedUrl(
-            resp.data.perms.data?.path!,
-            resp.data.perms.data?.token!,
-            file,
-          );
+            await storage.uploadToSignedUrl(
+              resp.data.perms.data?.path!,
+              resp.data.perms.data?.token!,
+              file,
+            );
 
-          // Stage 3: Sync with Database
-          toast.loading("Finalizing workspace...", { id: toastId });
-          console.log("user from workspace header", user);
-          mutation.mutate(
-            {
-              id: resp.data.perms.workspaceId,
-              name: file.name,
-              user_id: user?.userId || "",
-              file_type: file.type || "text/csv",
-            },
-            {
-              onSettled: () => {
-                toast.success(`${file.name} ready for analysis`, {
-                  id: toastId,
-                });
-                setPreview(resp.data.preview);
-                navigate({
-                  to: "/workspace/$slug",
-                  params: { slug: resp.data.perms.workspaceId! },
-                  replace: true,
-                });
+            toast.loading("Finalizing workspace...", { id: toastId });
+            mutation.mutate(
+              {
+                id: resp.data.perms.workspaceId,
+                name: file.name,
+                user_id: user?.userId || "",
+                file_type: "application/octet-stream",
               },
-            },
-          );
+              {
+                onSettled: () => {
+                  toast.success(`${file.name} ready for analysis`, {
+                    id: toastId,
+                  });
+                  setPreview(resp.data.preview);
+                  navigate({
+                    to: "/workspace/$slug",
+                    params: { slug: resp.data.perms.workspaceId! },
+                    replace: true,
+                  });
+                },
+              },
+            );
+          } else {
+            toast.error(resp.error?.message || "Upload permission denied", {
+              id: toastId,
+            });
+            setError("Failed to upload file");
+          }
         } else {
-          toast.error(resp.error?.message || "Upload permission denied", {
-            id: toastId,
-          });
-          setError("Failed to upload file");
+          // Convert and upload for CSV/Excel files
+          const resp = await convertAndUploadFileFn({ data: formData });
+
+          if (resp.success && resp.data.workspaceId) {
+            toast.loading("Finalizing workspace...", { id: toastId });
+            mutation.mutate(
+              {
+                id: resp.data.workspaceId,
+                name: resp.data.fileName!,
+                user_id: user?.userId || "",
+                file_type: "application/octet-stream",
+              },
+              {
+                onSettled: () => {
+                  toast.success(`${resp.data.fileName} ready for analysis`, {
+                    id: toastId,
+                  });
+                  if (resp.data.preview) {
+                    setPreview(resp.data.preview);
+                  }
+                  navigate({
+                    to: "/workspace/$slug",
+                    params: { slug: resp.data.workspaceId! },
+                    replace: true,
+                  });
+                },
+              },
+            );
+          } else {
+            toast.error(resp.error?.message || "Failed to convert and upload file", {
+              id: toastId,
+            });
+            setError("Failed to upload file");
+          }
         }
       } catch (error) {
         console.error(error);
@@ -170,11 +209,11 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
           <span className="text-xs font-bold text-neutral-strong/80">
             {isUploading
               ? "Uploading..."
-              : (preview?.fileName ?? "Untitled_Dataset.csv")}
+              : (preview?.fileName ?? "Untitled_Dataset")}
           </span>
           {!isUploading && (
             <div className="px-1.5 py-0.5 rounded bg-neutral-strong/5 border border-neutral-strong/5 text-[9px] font-black text-neutral-strong/40">
-              CSV
+              {preview?.fileType === "csv" ? "CSV" : preview?.fileType === "excel" ? "XLSX" : "PARQUET"}
             </div>
           )}
         </div>

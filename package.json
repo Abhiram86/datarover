@@ -12,6 +12,7 @@
     "@ai-sdk/groq": "^3.0.21",
     "@ai-sdk/openai-compatible": "^2.0.26",
     "@ai-sdk/react": "^3.0.52",
+    "@dsnp/parquetjs": "^1.8.7",
     "@duckdb/duckdb-wasm": "^1.33.1-dev18.0",
     "@neondatabase/serverless": "^1.0.2",
     "@streamdown/code": "^1.0.1",

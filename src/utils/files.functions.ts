@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { parseDataFromFile, uploadToSupabase } from "./files.server";
+import { parseDataFromFile, uploadToSupabase, convertAndUploadToSupabase } from "./files.server";
 import { db } from "./db.server";
 import { workspacesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -100,6 +100,55 @@ export const writeFileToDB = createServerFn({ method: "POST" })
         error:
           error instanceof Error
             ? { message: error.message }
+            : { message: "Unknown error" },
+      };
+    }
+  });
+
+export const convertAndUploadFile = createServerFn({ method: "POST" })
+  .inputValidator((data) => {
+    const parsed = fileSchema.safeParse(data);
+    if (!parsed.success) throw new Error(parsed.error.message);
+    return parsed.data;
+  })
+  .handler(async ({ data }) => {
+    const file = data.get("file");
+    if (!(file instanceof File)) throw new Error("No file found");
+
+    try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          data: null,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      const result = await convertAndUploadToSupabase(file, user.userId);
+
+      if (!result.success) {
+        return {
+          success: false,
+          data: null,
+          error: { message: result.error || "Failed to convert and upload file" },
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          workspaceId: result.workspaceId,
+          fileName: result.fileName,
+          preview: result.preview,
+        },
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error:
+          err instanceof Error
+            ? { message: err.message }
             : { message: "Unknown error" },
       };
     }

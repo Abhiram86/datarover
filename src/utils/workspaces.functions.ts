@@ -3,7 +3,6 @@ import { db } from "./db.server";
 import { workspacesTable } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { supabase } from "./supabase.server";
-import { parseCSVPreview, parseExcelPreview } from "./files.server";
 import { getCurrentUserFromCookie } from "./jwt.server";
 
 const storage = supabase.storage.from("datafiles");
@@ -108,63 +107,23 @@ export const getWorkspace = createServerFn({ method: "POST" })
 export const getWorkspacePreview = createServerFn({ method: "POST" })
   .inputValidator((id) => {
     if (typeof id !== "string") {
-      return { success: false, error: "Invalid workspace ID" };
+      throw new Error("Invalid id type");
     }
-    return { success: true, id: id };
+    return id;
   })
   .handler(async ({ data }) => {
-    if (data.error) {
-      console.error(data.error);
-      return {
-        success: false,
-        error: data.error,
-      };
-    }
-
     try {
-      const user = getCurrentUserFromCookie();
-      if (!user) {
+      const file = await storage.createSignedUrl(`data/${data}`, 60 * 5);
+      if (file.error) {
+        console.error(file.error);
         return {
           success: false,
-          error: { message: "Unauthorized" },
+          error: file.error.message,
         };
       }
-
-      const workspace = await db
-        .select({
-          id: workspacesTable.id,
-          name: workspacesTable.name,
-          fileType: workspacesTable.file_type,
-        })
-        .from(workspacesTable)
-        .where(eq(workspacesTable.id, data.id!))
-        .limit(1);
-
-      if (workspace.length === 0) {
-        return {
-          success: false,
-          error: { message: "Workspace not found" },
-        };
-      }
-
-      const { data: blob, error } = await storage.download(`data/${data.id}`);
-      if (error) {
-        return {
-          success: false,
-          error: error.message,
-        };
-      }
-      const previewBlob = blob.slice(0, 2 * 1024 * 1024);
-      const previewFile = new File([previewBlob], workspace[0].name!, {
-        type: workspace[0].fileType!,
-      });
-      const preview =
-        workspace[0].fileType === "csv"
-          ? await parseCSVPreview(previewFile)
-          : await parseExcelPreview(previewFile);
       return {
         success: true,
-        data: preview,
+        data: file.data.signedUrl,
       };
     } catch (error) {
       console.error(error);

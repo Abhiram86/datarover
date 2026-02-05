@@ -1,83 +1,162 @@
-import {
-  AllCommunityModule,
-  ColDef,
-  ModuleRegistry,
-  themeAlpine,
-} from "ag-grid-community";
-import { useEffect, useMemo } from "react";
+import { AllCommunityModule, ColDef, ModuleRegistry } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
-import { useFileStore } from "@/store/file";
-import { useServerFn } from "@tanstack/react-start";
-import { getWorkspacePreview } from "@/utils/workspaces.functions";
-import { useQuery } from "@tanstack/react-query";
+import { themeAlpine } from "ag-grid-community";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import { useDuckDBStore } from "@/store/duckdb";
 import { DataPreviewSkeleton } from "@/components/skeletons/DataPreviewSkeleton";
+import { getWorkspace } from "@/utils/workspaces.functions";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-interface DataPreviewProps {
-  workspaceId: string;
-  initialPreview?: {
-    fileName: string;
-    fileType: "csv" | "excel";
-    columns: string[];
-    rows: Record<string, any>[];
-    totalPreviewRows: number;
-  } | null;
+const DB_NAME = "DataRoverCache";
+const DB_VERSION = 1;
+const STORE_NAME = "parquetFiles";
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+  });
 }
 
-export default function DataPreview({ workspaceId, initialPreview }: DataPreviewProps) {
-  const { preview, setPreview } = useFileStore();
+async function getCachedFile(key: string): Promise<Uint8Array | null> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], "readonly");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(key);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const data = request.result;
+      db.close();
+      resolve(data?.buffer instanceof Uint8Array ? data.buffer : null);
+    };
+  });
+}
 
-  // Initialize with server-side data
+async function setCachedFile(key: string, buffer: Uint8Array): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put({ buffer }, key);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      db.close();
+      resolve();
+    };
+  });
+}
+
+interface DataPreviewProps {
+  workspaceId: string;
+  signedUrl: string;
+}
+
+export default function DataPreview({
+  workspaceId,
+  signedUrl,
+}: DataPreviewProps) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [buffer, setBuffer] = useState<Uint8Array | null>(null);
+  const [isLoadingCache, setIsLoadingCache] = useState(true);
+
+  const {
+    initialize,
+    loadParquet,
+    getPreviewRows,
+    columnNames,
+    rowCount,
+    isLoading: dbLoading,
+    isInitialized,
+  } = useDuckDBStore();
+
   useEffect(() => {
-    if (initialPreview) {
-      setPreview(initialPreview);
-    }
-  }, [workspaceId, initialPreview, setPreview]);
+    const loadCachedData = async () => {
+      if (workspaceId === "new") {
+        setIsLoadingCache(false);
+        return;
+      }
 
-  const getWorkspacePreviewFn = useServerFn(getWorkspacePreview);
+      try {
+        const cached = await getCachedFile(workspaceId);
+        if (cached && isInitialized) {
+          await loadParquet(new Uint8Array(cached));
+          setBuffer(cached);
+          const previewRows = await getPreviewRows(2000);
+          setRows(previewRows);
+        }
+      } catch (e) {
+        console.error("Failed to load cached data:", e);
+      } finally {
+        setIsLoadingCache(false);
+      }
+    };
 
-  // Skip fetching if we already have server-side data
-  const { data: previewData, isLoading: queryLoading } = useQuery({
-    queryKey: ["workspace-preview", workspaceId],
-    queryFn: () => getWorkspacePreviewFn({ data: workspaceId }),
-    enabled: workspaceId !== "new" && !initialPreview,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    loadCachedData();
+  }, [workspaceId, isInitialized]);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  const [workspaceQuery, fileQuery] = useQueries({
+    queries: [
+      {
+        queryKey: ["workspace-preview", workspaceId],
+        queryFn: () => getWorkspace({ data: workspaceId }),
+        refetchOnWindowFocus: false,
+      },
+      {
+        queryKey: ["download-file", workspaceId, signedUrl],
+        enabled: !!signedUrl && !buffer && !isLoadingCache,
+        queryFn: async () => {
+          const res = await fetch(signedUrl);
+          if (!res.ok) throw new Error("Failed to download file");
+
+          const blob = await res.blob();
+          const arr = new Uint8Array(await blob.arrayBuffer());
+          await setCachedFile(workspaceId, arr);
+          return arr;
+        },
+        refetchOnWindowFocus: false,
+        staleTime: Infinity,
+      },
+    ],
   });
 
-  // Update store when fresh data comes in
   useEffect(() => {
-    if (previewData?.success && previewData.data) {
-      setPreview(previewData.data);
-    }
-  }, [previewData, setPreview]);
+    if (!fileQuery.data) return;
+    if (buffer) return;
+    if (!isInitialized) return;
 
-  const rows = preview?.rows ?? [];
-  const columns = preview?.columns ?? [];
+    (async () => {
+      await loadParquet(fileQuery.data);
+      setBuffer(fileQuery.data);
+      const previewRows = await getPreviewRows(2000);
+      setRows(previewRows);
+    })();
+  }, [fileQuery.data, buffer, isInitialized]);
 
   const columnDefs = useMemo<ColDef[]>(() => {
-    // Prefer columns from server
-    if (columns.length > 0) {
-      return columns.map((key) => ({
-        field: key,
-        headerName: key.toUpperCase(),
-        filter: true,
-        sortable: true,
-        resizable: true,
-      }));
-    }
+    if (columnNames.length === 0) return [];
 
-    // Fallback: infer from first row
-    if (rows.length === 0) return [];
-
-    return Object.keys(rows[0]).map((key) => ({
+    return columnNames.map((key) => ({
       field: key,
       headerName: key.toUpperCase(),
       filter: true,
       sortable: true,
       resizable: true,
     }));
-  }, [columns, rows]);
+  }, [columnNames]);
 
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -87,31 +166,54 @@ export default function DataPreview({ workspaceId, initialPreview }: DataPreview
     [],
   );
 
-  const isLoading =
-    workspaceId !== "new" &&
-    !preview &&
-    (queryLoading || previewData === undefined);
+  const showLoading =
+    dbLoading ||
+    isLoadingCache ||
+    workspaceQuery.isLoading ||
+    fileQuery.isLoading;
+
+  const showError = workspaceQuery.isError || fileQuery.isError;
+
+  const showEmpty = workspaceId === "new";
+  const showGrid = !showLoading && !showEmpty && !showError && buffer !== null;
 
   return (
     <div className="h-full w-full flex flex-col bg-slate-800 p-4">
-      {workspaceId === "new" && (
+      {showEmpty && (
         <div className="flex-1 flex items-center justify-center">
           <p className="text-xs text-white/40">Upload a file to preview data</p>
         </div>
       )}
 
-      {workspaceId !== "new" && isLoading && <DataPreviewSkeleton />}
+      {showLoading && <DataPreviewSkeleton />}
 
-      {workspaceId !== "new" && !isLoading && (
+      {showError && (
+        <div className="flex-1 flex items-center justify-center text-red-400">
+          <p className="text-xs">
+            Error:{" "}
+            {workspaceQuery.error
+              ? workspaceQuery.error.message
+              : fileQuery.error
+                ? fileQuery.error.message
+                : "Unknown error"}
+          </p>
+        </div>
+      )}
+
+      {showGrid && (
         <>
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-[10px] font-black text-primary uppercase tracking-widest">
               Data Explorer
             </h4>
-
-            <span className="text-[10px] font-mono text-primary bg-blue-400/5 px-2 py-1 rounded border border-blue-400/10">
-              {rows.length} ROWS
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-white/60">
+                Total: {rowCount.toLocaleString()} rows
+              </span>
+              <span className="text-[10px] font-mono text-primary bg-blue-400/5 px-2 py-1 rounded border border-blue-400/10">
+                Showing: {rows.length} rows
+              </span>
+            </div>
           </div>
 
           <div className="flex-1 overflow-hidden rounded-lg border border-white/5">
@@ -127,6 +229,8 @@ export default function DataPreview({ workspaceId, initialPreview }: DataPreview
                 defaultColDef={defaultColDef}
                 rowSelection="multiple"
                 suppressCellFocus={true}
+                pagination={rows.length > 1000}
+                paginationPageSize={100}
               />
             </div>
           </div>
@@ -135,5 +239,3 @@ export default function DataPreview({ workspaceId, initialPreview }: DataPreview
     </div>
   );
 }
-
-export { DataPreviewSkeleton } from "@/components/skeletons/DataPreviewSkeleton";

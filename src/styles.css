@@ -71,6 +71,10 @@ code {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 10px;
   }
+
+  .ag-paging-panel {
+    margin-inline: auto;
+  }
 }
 /* Better light‑mode code blocks */
 [data-streamdown="code-block"] {

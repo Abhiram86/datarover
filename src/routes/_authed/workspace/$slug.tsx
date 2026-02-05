@@ -1,6 +1,4 @@
-import {
-  createFileRoute,
-} from "@tanstack/react-router";
+import { ClientOnly, createFileRoute } from "@tanstack/react-router";
 import History from "@/components/Chat/History";
 import DataPreview from "@/components/DataPreview";
 import { Panel } from "@/components/Panels/Panel";
@@ -8,11 +6,11 @@ import { PanelGroup } from "@/components/Panels/PanelGroup";
 import WorkspaceHeader from "@/components/WorkSpaceHeader";
 import { getSupabaseEnv } from "@/utils/sensitive.functions";
 import { getConversation, getMessages } from "@/utils/chat.functions";
-import { getWorkspacePreview } from "@/utils/workspaces.functions";
 import { createClient } from "@supabase/supabase-js";
 import { useFileStore } from "@/store/file";
 import { useEffect, useMemo } from "react";
 import { WorkspaceSkeleton } from "@/components/skeletons/WorkspaceSkeleton";
+import { getWorkspacePreview } from "@/utils/workspaces.functions";
 
 export const Route = createFileRoute("/_authed/workspace/$slug")({
   loader: async ({ params, context }) => {
@@ -20,27 +18,33 @@ export const Route = createFileRoute("/_authed/workspace/$slug")({
     const slug = params.slug;
 
     // Fetch conversation, messages, and preview in parallel
-    const [conversation, messages, preview] = await Promise.all([
-      slug !== "new" ? context.queryClient.ensureQueryData({
-        queryKey: ["conversation", slug],
-        queryFn: () => getConversation({ data: slug }),
-      }) : null,
-      slug !== "new" ? context.queryClient.ensureQueryData({
-        queryKey: ["messages", slug],
-        queryFn: () => getMessages({ data: slug }),
-      }) : null,
-      slug !== "new" ? context.queryClient.ensureQueryData({
-        queryKey: ["workspace-preview", slug],
-        queryFn: () => getWorkspacePreview({ data: slug }),
-      }) : null,
+    const [workspace, conversation, messages] = await Promise.all([
+      slug !== "new"
+        ? context.queryClient.ensureQueryData({
+            queryKey: ["workspace", slug],
+            queryFn: () => getWorkspacePreview({ data: slug }),
+          })
+        : null,
+      slug !== "new"
+        ? context.queryClient.ensureQueryData({
+            queryKey: ["conversation", slug],
+            queryFn: () => getConversation({ data: slug }),
+          })
+        : null,
+      slug !== "new"
+        ? context.queryClient.ensureQueryData({
+            queryKey: ["messages", slug],
+            queryFn: () => getMessages({ data: slug }),
+          })
+        : null,
     ]);
 
     return {
       env,
       slug,
+      workspace,
       conversation,
       messages,
-      preview,
     };
   },
   pendingComponent: WorkspaceSkeleton,
@@ -89,21 +93,29 @@ function RouteComponent() {
             <div className="h-full bg-primary-muted/10">
               <History
                 workspaceId={loaderData.slug}
-                initialConversation={loaderData.conversation?.success ? loaderData.conversation.data : null}
-                initialMessages={loaderData.messages?.success ? loaderData.messages.data : []}
+                initialConversation={
+                  loaderData.conversation?.success
+                    ? loaderData.conversation.data
+                    : null
+                }
+                initialMessages={
+                  loaderData.messages?.success ? loaderData.messages.data : []
+                }
               />
             </div>
           </Panel>
 
           <Panel size={50} minSize={33}>
             <PanelGroup direction="vertical">
-              <Panel size={70}>
-                <DataPreview
-                  workspaceId={loaderData.slug}
-                  initialPreview={loaderData.preview?.success ? loaderData.preview.data : null}
-                />
+              <Panel minSize={33} size={67}>
+                <ClientOnly>
+                  <DataPreview
+                    workspaceId={loaderData.slug}
+                    signedUrl={loaderData.workspace?.data!}
+                  />
+                </ClientOnly>
               </Panel>
-              <Panel size={30}>
+              <Panel minSize={33} size={33}>
                 <div className="h-full bg-[#020617] p-4 font-mono text-sm text-blue-300">
                   <span className="text-gray-500">
                     # Start typing analysis...
