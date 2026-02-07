@@ -38,7 +38,7 @@ const ResizeHandle = ({ onResize, direction }: ResizeHandleProps) => {
     >
       {/* Visual Knurling/Handle */}
       <div
-        className={`${direction === "horizontal" ? "h-8 w-0.5" : "w-8 h-0.5"} bg-neutral rounded-full`}
+        className={`${direction === "horizontal" ? "h-8 w-0.75" : "w-8 h-0.75"} bg-blue-500 rounded-full`}
       />
     </div>
   );

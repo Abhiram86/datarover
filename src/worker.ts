@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import type { MainToWorker, WorkerToMain } from "./types/pyodide";
+import type { MainToWorker } from "./types/pyodide";
 
 let pyodide: any | null = null;
 
@@ -8,15 +8,33 @@ async function initPyodide() {
   if (pyodide) return;
 
   const { loadPyodide } =
-    // @ts-expect-error its cdn import
+    // @ts-expect-error CDN import
     await import("https://cdn.jsdelivr.net/pyodide/v0.23.2/full/pyodide.mjs");
 
   pyodide = await loadPyodide({
     indexURL: "https://cdn.jsdelivr.net/pyodide/v0.23.2/full/",
   });
 
-  const msg: WorkerToMain = { type: "PYODIDE_READY" };
-  self.postMessage(msg);
+  // ✅ Proper stdout redirection
+  pyodide.setStdout({
+    batched: (msg: string) => {
+      self.postMessage({
+        type: "STDOUT",
+        data: msg,
+      });
+    },
+  });
+
+  pyodide.setStderr({
+    batched: (msg: string) => {
+      self.postMessage({
+        type: "STDERR",
+        data: msg,
+      });
+    },
+  });
+
+  self.postMessage({ type: "PYODIDE_READY" });
 }
 
 self.onmessage = async (event: MessageEvent<MainToWorker>) => {
@@ -41,7 +59,18 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
 
       try {
         const result = await pyodide.runPythonAsync(code);
-        self.postMessage({ type: "EXEC_RESULT", id, result });
+
+        let finalResult = result;
+        if (result && typeof result === "object" && "toJs" in result) {
+          finalResult = result.toJs({ dict_converter: Object.fromEntries });
+          result.destroy();
+        }
+
+        self.postMessage({
+          type: "EXEC_RESULT",
+          id,
+          result: finalResult,
+        });
       } catch (err) {
         self.postMessage({
           type: "EXEC_ERROR",
@@ -49,6 +78,7 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
           error: String(err),
         });
       }
+
       break;
     }
   }

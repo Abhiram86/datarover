@@ -11,6 +11,8 @@ import { useFileStore } from "@/store/file";
 import { useEffect, useMemo } from "react";
 import { WorkspaceSkeleton } from "@/components/skeletons/WorkspaceSkeleton";
 import { getWorkspacePreview } from "@/utils/workspaces.functions";
+import { useSandboxStore } from "@/store/sandbox";
+import { CodeEditor } from "@/components/Code";
 
 export const Route = createFileRoute("/_authed/workspace/$slug")({
   loader: async ({ params, context }) => {
@@ -74,11 +76,17 @@ function RouteComponent() {
     loaderData.env.data.supabaseAnonKey,
   ]);
 
+  const initPythonSandbox = useSandboxStore((s) => s.init);
+
   useEffect(() => {
     if (loaderData.slug === "new") {
       useFileStore.getState().reset();
     }
   }, [loaderData.slug]);
+
+  useEffect(() => {
+    initPythonSandbox();
+  }, []);
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
@@ -116,11 +124,9 @@ function RouteComponent() {
                 </ClientOnly>
               </Panel>
               <Panel minSize={33} size={33}>
-                <div className="h-full bg-[#020617] p-4 font-mono text-sm text-blue-300">
-                  <span className="text-gray-500">
-                    # Start typing analysis...
-                  </span>
-                </div>
+                <ClientOnly>
+                  <CodeEditor />
+                </ClientOnly>
               </Panel>
             </PanelGroup>
           </Panel>

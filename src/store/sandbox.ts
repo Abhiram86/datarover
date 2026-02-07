@@ -12,9 +12,17 @@ interface SandboxStore {
   ready: boolean;
   nextId: number;
   pending: Record<number, Pending>;
+  running: boolean;
+  consoleOutput: string[];
 
   init: () => void;
+  clearConsole: () => void;
   runPython: (code: string) => Promise<unknown>;
+  runPythonSafe: (
+    code: string,
+  ) => Promise<{ ok: boolean; result?: unknown; error?: unknown }>;
+  runPythonWithTimeout: (code: string, timeout?: number) => Promise<unknown>;
+  loadPackage: (pkg: string) => Promise<unknown>;
   reset: () => void;
 }
 
@@ -22,6 +30,8 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
   worker: null,
   ready: false,
   nextId: 1,
+  running: false,
+  consoleOutput: [],
   pending: {},
 
   init: () => {
@@ -31,6 +41,20 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
 
     worker.onmessage = (e: MessageEvent<WorkerToMain>) => {
       const msg = e.data;
+
+      if (msg.type === "STDOUT") {
+        set((state) => ({
+          consoleOutput: [...state.consoleOutput, msg.data],
+        }));
+        return;
+      }
+
+      if (msg.type === "STDERR") {
+        set((state) => ({
+          consoleOutput: [...state.consoleOutput, `[ERR] ${msg.data}`],
+        }));
+        return;
+      }
 
       if (msg.type === "PYODIDE_READY") {
         set({ ready: true });
@@ -63,6 +87,10 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
     set({ worker });
   },
 
+  clearConsole: () => {
+    set({ consoleOutput: [] });
+  },
+
   runPython: (code: string) => {
     if (!get().ready) {
       return Promise.reject(new Error("Pyodide not ready"));
@@ -84,13 +112,43 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
     });
   },
 
+  runPythonSafe: async (code: string) => {
+    try {
+      set({ running: true });
+      const result = await get().runPython(code);
+      return { ok: true, result };
+    } catch (error) {
+      return { ok: false, error };
+    } finally {
+      set({ running: false });
+    }
+  },
+
+  runPythonWithTimeout: (code: string, timeout = 5000) => {
+    return Promise.race([
+      get().runPython(code),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Execution timed out")), timeout),
+      ),
+    ]);
+  },
+
+  loadPackage: (pkg: string) => {
+    return get().runPython(`
+import micropip
+await micropip.install("${pkg}")
+  `);
+  },
+
   reset: () => {
     get().worker?.terminate();
     set({
       worker: null,
       ready: false,
       nextId: 1,
+      consoleOutput: [],
       pending: {},
     });
+    get().init();
   },
 }));
