@@ -20,7 +20,12 @@ interface SandboxStore {
   runPython: (code: string) => Promise<unknown>;
   runPythonSafe: (
     code: string,
-  ) => Promise<{ ok: boolean; result?: unknown; error?: unknown }>;
+  ) => Promise<{
+    ok: boolean;
+    result?: unknown;
+    error?: unknown;
+    consoleOutput?: string[];
+  }>;
   runPythonWithTimeout: (code: string, timeout?: number) => Promise<unknown>;
   loadPackage: (pkg: string) => Promise<unknown>;
   reset: () => void;
@@ -114,11 +119,12 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
 
   runPythonSafe: async (code: string) => {
     try {
+      get().clearConsole();
       set({ running: true });
       const result = await get().runPython(code);
-      return { ok: true, result };
+      return { ok: true, result, consoleOutput: get().consoleOutput };
     } catch (error) {
-      return { ok: false, error };
+      return { ok: false, error, consoleOutput: get().consoleOutput };
     } finally {
       set({ running: false });
     }

@@ -7,8 +7,6 @@ import { InputHint } from "./InputHint";
 import { PromptTextarea } from "./PromptTextarea";
 import { useAutoResizeTextarea } from "@/hooks/useAutoResizeTextarea";
 import { useChatStream } from "@/hooks/useChatStream";
-// import { useSandbox } from "@/hooks/useSanbox";
-// import { useSandboxStore } from "@/store/sandbox";
 
 export const PromptBox = React.memo(
   ({ workspaceId }: { workspaceId: string }) => {
@@ -25,12 +23,6 @@ export const PromptBox = React.memo(
 
     const textareaRef = useAutoResizeTextarea(input);
     const readChatStream = useChatStream(addStreamMessage);
-    // const { safePythonExec, ready: sandboxReady } = useSandbox();
-
-    // const handleSubmit = useCallback(async () => {
-    //   const res = await safePythonExec(input);
-    //   console.log(res);
-    // }, [safePythonExec, sandboxReady]);
 
     const handleSubmit = useCallback(async () => {
       if (!input.trim()) return;
@@ -118,7 +110,10 @@ export const PromptBox = React.memo(
               ],
             });
             savedUserMessage = result.data![0];
-            updateMessage(tempUserId, savedUserMessage);
+            updateMessage(tempUserId, {
+              ...savedUserMessage,
+              tool_calls: savedUserMessage.tool_calls || undefined,
+            });
           } catch (error) {
             console.error(error);
             toast.error("Error saving message");
@@ -134,13 +129,23 @@ export const PromptBox = React.memo(
             prompt_tokens: promptTokens,
             is_complete: true,
             reasoning: streamResult.reasoning,
+            tool_calls:
+              streamResult.toolCalls.length > 0
+                ? streamResult.toolCalls
+                : undefined,
           };
 
           const savedMessage = await addMessageServer({
             data: [assistantMessage],
           });
 
-          updateMessage(tempAssistantId, savedMessage.data![0]);
+          const savedAssistantMessage = savedMessage.data![0];
+          
+          updateMessage(tempAssistantId, {
+            ...savedAssistantMessage,
+            id: savedAssistantMessage.id, // Use the real ID from DB
+            tool_calls: savedAssistantMessage.tool_calls || streamResult.toolCalls.length > 0 ? streamResult.toolCalls : undefined,
+          });
         } catch (error) {
           console.error(error);
           toast.error("Error getting response");

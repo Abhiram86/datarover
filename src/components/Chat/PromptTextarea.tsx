@@ -17,7 +17,7 @@ export const PromptTextarea = forwardRef<
     <div className="relative flex items-end gap-2 bg-neutral-strong/5 rounded-xl border border-neutral-strong/10 p-2 focus-within:border-neutral-strong/20 transition-all">
       <button
         type="button"
-        className="p-2 text-neutral-strong/40 hover:text-neutral-strong/80 transition-colors mb-1"
+        className="p-2 text-neutral-strong/40 hover:text-neutral-strong/80 transition-colors"
       >
         <Paperclip size={18} />
       </button>

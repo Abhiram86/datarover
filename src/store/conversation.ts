@@ -1,4 +1,4 @@
-import { Conversation, Message } from "@/types";
+import { Conversation, Message, ToolCall } from "@/types";
 import { create } from "zustand";
 
 interface ConversationStoreState {
@@ -11,7 +11,10 @@ interface ConversationStoreState {
   setConversations: (conversation: Conversation) => void;
   addMessage: (message: Message) => void;
   addStreamMessage: (
-    delta: string | { type: "reasoning" | "content"; text: string },
+    delta:
+      | string
+      | { type: "reasoning" | "content"; text: string }
+      | { type: "tool_call"; tool: ToolCall },
   ) => void;
   updateMessage: (tempId: string, newMessage: Message) => void;
   removeMessage: (id: string) => void;
@@ -35,7 +38,10 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
   addMessage: (message: Message) =>
     set((state) => ({ messages: [...state.messages, message] })),
   addStreamMessage: (
-    delta: string | { type: "reasoning" | "content"; text: string },
+    delta:
+      | string
+      | { type: "reasoning" | "content"; text: string }
+      | { type: "tool_call"; tool: ToolCall },
   ) =>
     set((state) => {
       const messages = [...state.messages];
@@ -66,6 +72,12 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
         messages[lastIndex] = {
           ...last,
           content: last.content + delta.text,
+        };
+        updated = true;
+      } else if (delta.type === "tool_call") {
+        messages[lastIndex] = {
+          ...last,
+          tool_calls: [...(last.tool_calls || []), delta.tool],
         };
         updated = true;
       }

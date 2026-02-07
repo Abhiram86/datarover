@@ -1,8 +1,8 @@
 import {
   boolean,
   integer,
+  jsonb,
   pgEnum,
-  // jsonb,
   pgTable,
   text,
   timestamp,
@@ -63,6 +63,15 @@ export const messagesTable = pgTable("messages", {
   // Text content (user query or LLM explanation)
   reasoning: text("reasoning"),
   content: text("content").notNull(),
+  // Tool calls made by the assistant
+  tool_calls: jsonb("toolCalls").$type<
+    {
+      id: string;
+      name: string;
+      arguments: string;
+      result?: string;
+    }[]
+  >(),
   // For streaming: track if message is complete
   is_complete: boolean("isComplete").default(false),
   // Token counts for cost tracking

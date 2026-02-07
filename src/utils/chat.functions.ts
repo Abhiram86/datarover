@@ -6,6 +6,7 @@ import { conversationsTable, messagesTable } from "@/db/schema";
 import { systemPrompt } from "@/lib/systemPrompt";
 import { eq, or } from "drizzle-orm";
 import { getCurrentUserFromCookie } from "./jwt.server";
+import { tools } from "@/tools/runpython";
 
 const client = new OpenAI({
   baseURL: "https://integrate.api.nvidia.com/v1",
@@ -13,43 +14,47 @@ const client = new OpenAI({
 });
 
 export const generalChatStream = createServerFn({ method: "POST" })
-  .inputValidator((prompt: unknown) => {
-    if (typeof prompt !== "string") throw new Error("Invalid prompt");
-    return prompt;
+  .inputValidator((body: unknown) => {
+    if (typeof body !== "object" || body === null || !("messages" in body)) {
+      throw new Error("Invalid request body");
+    }
+    return body as {
+      messages: OpenAI.Chat.ChatCompletionMessageParam[];
+    };
   })
   .handler(async function* ({ data }) {
-    // REMOVE the initial yield "" - this causes issues
-    // yield "";
+    const { messages } = data;
 
     const completion = await client.chat.completions.create({
       model: "z-ai/glm4.7",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: data },
-      ],
+      messages: [{ role: "system", content: systemPrompt }, ...messages],
+      tools,
+      tool_choice: "auto",
       stream: true,
       stream_options: { include_usage: true },
       temperature: 1,
       top_p: 1,
       max_tokens: 16384,
-    } as OpenAI.Chat.ChatCompletionCreateParamsStreaming & {
-      extra_body: {
-        chat_template_kwargs: {
-          enable_thinking: boolean;
-          clear_thinking: boolean;
-        };
-      };
     });
 
     let reasoningBatch = "";
     let contentBatch = "";
     let lastFlush = Date.now();
+
     let promptTokens = 0;
     let completionTokens = 0;
 
+    const toolCalls: Record<
+      number,
+      {
+        id: string;
+        name: string;
+        arguments: string;
+      }
+    > = {};
+
     try {
       for await (const chunk of completion) {
-        // Check for final chunk with usage data
         if (!chunk.choices || chunk.choices.length === 0) {
           if (chunk.usage) {
             promptTokens = chunk.usage.prompt_tokens ?? 0;
@@ -63,30 +68,67 @@ export const generalChatStream = createServerFn({ method: "POST" })
 
         const reasoning = (delta as { reasoning_content?: string })
           .reasoning_content;
-        if (reasoning) {
-          reasoningBatch += reasoning;
-        }
-        if (delta.content) {
-          contentBatch += delta.content;
+        if (reasoning) reasoningBatch += reasoning;
+
+        if (delta.content) contentBatch += delta.content;
+
+        if (delta.tool_calls) {
+          for (const toolCall of delta.tool_calls) {
+            const index = toolCall.index;
+            if (index === undefined || index === null) continue;
+
+            if (!toolCalls[index]) {
+              toolCalls[index] = {
+                id: toolCall.id ?? `call_${index}`,
+                name: toolCall.function?.name ?? "",
+                arguments: "",
+              };
+            } else if (toolCall.id) {
+              toolCalls[index].id = toolCall.id;
+            }
+
+            if (toolCall.function?.name) {
+              toolCalls[index].name = toolCall.function.name;
+            }
+
+            if (toolCall.function?.arguments) {
+              toolCalls[index].arguments += toolCall.function.arguments;
+            }
+          }
         }
 
         const now = Date.now();
         if (now - lastFlush > 100) {
           if (reasoningBatch) {
             yield JSON.stringify({ type: "reasoning", text: reasoningBatch }) +
-              "\n"; // Add newline delimiter
+              "\n";
             reasoningBatch = "";
           }
           if (contentBatch) {
             yield JSON.stringify({ type: "content", text: contentBatch }) +
-              "\n"; // Add newline delimiter
+              "\n";
             contentBatch = "";
           }
+
+          for (const [index, call] of Object.entries(toolCalls)) {
+            const rawArgs = call.arguments ?? "";
+            if (!rawArgs.trim()) continue;
+            try {
+              JSON.parse(rawArgs);
+              yield JSON.stringify({
+                type: "tool_call",
+                id: call.id,
+                name: call.name,
+                arguments: rawArgs,
+              }) + "\n";
+              delete toolCalls[parseInt(index)];
+            } catch {}
+          }
+
           lastFlush = now;
         }
       }
     } finally {
-      // Final flush
       if (reasoningBatch) {
         yield JSON.stringify({ type: "reasoning", text: reasoningBatch }) +
           "\n";
@@ -94,7 +136,40 @@ export const generalChatStream = createServerFn({ method: "POST" })
       if (contentBatch) {
         yield JSON.stringify({ type: "content", text: contentBatch }) + "\n";
       }
-      // Yield token usage data
+
+      for (const call of Object.values(toolCalls)) {
+        const rawArgs = call.arguments ?? "";
+        if (!rawArgs || !rawArgs.trim()) {
+          yield JSON.stringify({
+            type: "tool_call_error",
+            id: call.id,
+            name: call.name,
+            raw_arguments: rawArgs,
+            reason: "empty_arguments",
+          }) + "\n";
+          continue;
+        }
+
+        try {
+          JSON.parse(rawArgs);
+          yield JSON.stringify({
+            type: "tool_call",
+            id: call.id,
+            name: call.name,
+            arguments: rawArgs,
+          }) + "\n";
+        } catch (err) {
+          yield JSON.stringify({
+            type: "tool_call_error",
+            id: call.id,
+            name: call.name,
+            raw_arguments: rawArgs,
+            reason: "invalid_json",
+            error_message: String(err),
+          }) + "\n";
+        }
+      }
+
       yield JSON.stringify({
         type: "usage",
         prompt_tokens: promptTokens,
@@ -137,6 +212,13 @@ export const newConversation = createServerFn({ method: "POST" })
     }
   });
 
+const toolCallSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  arguments: z.string(),
+  result: z.string().optional(),
+});
+
 const newMessageSchema = z.array(
   z.object({
     workspace_id: z.string(),
@@ -147,6 +229,7 @@ const newMessageSchema = z.array(
     is_complete: z.boolean().optional(),
     prompt_tokens: z.number().optional(),
     completion_tokens: z.number().optional(),
+    tool_calls: z.array(toolCallSchema).optional(),
   }),
 );
 

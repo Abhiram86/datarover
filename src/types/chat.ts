@@ -8,6 +8,13 @@ export interface Conversation {
 
 export type MessageRole = "user" | "assistant" | "tool" | "system";
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+  result?: string;
+}
+
 export type Message = {
   id: string;
   workspace_id: string;
@@ -19,4 +26,5 @@ export type Message = {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   created_at: Date | null;
+  tool_calls?: ToolCall[];
 };

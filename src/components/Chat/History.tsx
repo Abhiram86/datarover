@@ -2,21 +2,42 @@ import { useConversationStore } from "@/store/conversation";
 import { PromptBox } from "./PromptBox";
 import { Markdown } from "../Markdown";
 import { HistorySkeleton } from "@/components/skeletons/HistorySkeleton";
-import { ChevronDown, Brain } from "lucide-react";
+import { ChevronDown, Brain, Terminal } from "lucide-react";
 import { useState, memo, useMemo, useEffect } from "react";
 import type { Message } from "@/types";
 import { useServerFn } from "@tanstack/react-start";
 import { getConversation, getMessages } from "@/utils/chat.functions";
 import { useQuery } from "@tanstack/react-query";
 
+function normalizeMessages(messages: any[]): Message[] {
+  return messages.map((msg) => ({
+    ...msg,
+    tool_calls: msg.tool_calls || undefined,
+  }));
+}
+
 const MessageItem = memo(
   ({ msg, isLast }: { msg: Message; isLast: boolean }) => (
     <div
       className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
     >
-      <span className="text-[10px] font-bold uppercase text-neutral-strong/20 mb-2">
-        {msg.role}
-      </span>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-bold uppercase text-neutral-strong/20">
+          {msg.role}
+        </span>
+        {msg.tool_calls && msg.tool_calls.length > 0 && (
+          <div className="flex items-center gap-1">
+            {msg.tool_calls.map((tool) => (
+              <span
+                key={tool.id}
+                className="text-[9px] font-medium px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20"
+              >
+                {tool.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
 
       {msg.role === "user" ? (
         <div className="max-w-[90%] text-sm p-3 rounded-2xl leading-relaxed bg-slate-800 text-white shadow-md shadow-slate-200/50">
@@ -29,6 +50,14 @@ const MessageItem = memo(
               reasoning={msg.reasoning}
               isProcessing={isLast && msg.role === "assistant" && !msg.content}
             />
+          )}
+
+          {msg.tool_calls && msg.tool_calls.length > 0 && (
+            <div className="space-y-2">
+              {msg.tool_calls.map((tool) => (
+                <ToolCallDropdown key={tool.id} tool={tool} />
+              ))}
+            </div>
           )}
 
           <div className="text-neutral-strong/90">
@@ -61,6 +90,14 @@ interface HistoryProps {
     prompt_tokens: number | null;
     completion_tokens: number | null;
     created_at: Date | null;
+    tool_calls?:
+      | {
+          id: string;
+          name: string;
+          arguments: string;
+          result?: string;
+        }[]
+      | null;
   }[];
 }
 
@@ -79,9 +116,15 @@ const History = ({
       setConversations(initialConversation);
     }
     if (initialMessages) {
-      setMessages(initialMessages);
+      setMessages(normalizeMessages(initialMessages));
     }
-  }, [workspaceId, initialConversation, initialMessages, setConversations, setMessages]);
+  }, [
+    workspaceId,
+    initialConversation,
+    initialMessages,
+    setConversations,
+    setMessages,
+  ]);
 
   // Still fetch for reactivity (e.g., after mutations)
   const getConversationFn = useServerFn(getConversation);
@@ -116,7 +159,7 @@ const History = ({
 
   useEffect(() => {
     if (messagesData?.success && messagesData.data) {
-      setMessages(messagesData.data);
+      setMessages(normalizeMessages(messagesData.data));
     }
   }, [messagesData, setMessages]);
 
@@ -241,6 +284,77 @@ const ReasoningDropdown = memo(
   },
 );
 ReasoningDropdown.displayName = "ReasoningDropdown";
+
+const ToolCallDropdown = memo(
+  ({
+    tool,
+  }: {
+    tool: { id: string; name: string; arguments: string; result?: string };
+  }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const parsedArgs = JSON.parse(tool.arguments);
+    const parsedResult = tool.result ? JSON.parse(tool.result) : null;
+
+    return (
+      <div className="w-full border-l border-neutral-strong/5 ml-1">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center gap-2 px-3 py-1 text-[9px] font-black text-neutral-strong/30 hover:text-neutral-strong/60 transition-colors uppercase tracking-widest"
+        >
+          <Terminal size={12} className="text-blue-400" />
+          <span className="text-blue-400">{tool.name}</span>
+          <ChevronDown
+            size={12}
+            className={`ml-auto transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        <div
+          className={`overflow-hidden transition-all duration-300 ease-in-out ${
+            isOpen ? "max-h-500 opacity-100" : "max-h-0 opacity-0"
+          }`}
+        >
+          <div className="pl-3 py-2 space-y-2">
+            {parsedArgs && (
+              <div>
+                <span className="text-[9px] font-bold text-neutral-strong/20 uppercase">
+                  Arguments
+                </span>
+                <pre className="text-[10px] text-neutral-strong/60 font-mono mt-1 overflow-x-auto whitespace-pre-wrap break-all">
+                  {JSON.stringify(parsedArgs, null, 2)}
+                </pre>
+              </div>
+            )}
+            {parsedResult && (
+              <div className="pt-2 border-t border-neutral-strong/10">
+                <span className="text-[9px] font-bold text-green-800/60 uppercase">
+                  Result
+                </span>
+                {parsedResult.consoleOutput &&
+                  parsedResult.consoleOutput.length > 0 && (
+                    <div className="mt-1 p-2 bg-primary-muted rounded font-mono text-[10px] text-green-800/80">
+                      {parsedResult.consoleOutput.join("\n")}
+                    </div>
+                  )}
+                {parsedResult.result !== undefined && (
+                  <pre className="text-[10px] text-neutral-strong/60 font-mono mt-1 overflow-x-auto whitespace-pre-wrap break-all">
+                    {JSON.stringify(parsedResult.result, null, 2)}
+                  </pre>
+                )}
+                {parsedResult.error && (
+                  <div className="mt-1 p-2 bg-red-500/10 rounded font-mono text-[10px] text-red-400">
+                    {String(parsedResult.error)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
+ToolCallDropdown.displayName = "ToolCallDropdown";
 
 const ErrorState = ({
   message,

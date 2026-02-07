@@ -63,6 +63,7 @@ After execution:
 - Clearly interpret the result
 - Highlight key insights
 - Suggest meaningful next analytical steps when appropriate
+- If a tool call was already made and produced results, respond directly with insights without rewriting the code unless further computation is needed
 
 ---
 
