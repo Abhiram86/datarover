@@ -4,6 +4,8 @@ import { create } from "zustand";
 interface ConversationStoreState {
   conversation: Conversation | null;
   messages: Message[];
+  currentTempAssistantId: string | null;
+  newAssistantStep: (tempId: string) => void;
   updateMessagesConversationId: (
     tempConvoId: string,
     realConvoId: string,
@@ -15,6 +17,7 @@ interface ConversationStoreState {
       | string
       | { type: "reasoning" | "content"; text: string }
       | { type: "tool_call"; tool: ToolCall },
+    tempId?: string,
   ) => void;
   updateMessage: (tempId: string, newMessage: Message) => void;
   removeMessage: (id: string) => void;
@@ -25,6 +28,8 @@ interface ConversationStoreState {
 export const useConversationStore = create<ConversationStoreState>((set) => ({
   conversation: null,
   messages: [],
+  currentTempAssistantId: null,
+  newAssistantStep: (tempId: string) => set({ currentTempAssistantId: tempId }),
   updateMessagesConversationId: (tempConvoId: string, realConvoId: string) => {
     set((state) => ({
       messages: state.messages.map((msg) =>
@@ -42,42 +47,46 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
       | string
       | { type: "reasoning" | "content"; text: string }
       | { type: "tool_call"; tool: ToolCall },
+    tempId?: string,
   ) =>
     set((state) => {
       const messages = [...state.messages];
-      const lastIndex = messages.length - 1;
+      const targetId = tempId || state.currentTempAssistantId;
+      
+      if (!targetId) return state;
 
-      if (lastIndex < 0) return state;
+      const msgIndex = messages.findIndex((m) => m.id === targetId);
+      if (msgIndex < 0) return state;
 
-      const last = messages[lastIndex];
-      if (last.role !== "assistant") return state;
+      const msg = messages[msgIndex];
+      if (msg.role !== "assistant") return state;
 
       let updated = false;
 
       if (typeof delta === "string") {
         if (delta) {
-          messages[lastIndex] = {
-            ...last,
-            content: last.content + delta,
+          messages[msgIndex] = {
+            ...msg,
+            content: msg.content + delta,
           };
           updated = true;
         }
       } else if (delta.type === "reasoning" && delta.text) {
-        messages[lastIndex] = {
-          ...last,
-          reasoning: (last.reasoning || "") + delta.text,
+        messages[msgIndex] = {
+          ...msg,
+          reasoning: (msg.reasoning || "") + delta.text,
         };
         updated = true;
       } else if (delta.type === "content" && delta.text) {
-        messages[lastIndex] = {
-          ...last,
-          content: last.content + delta.text,
+        messages[msgIndex] = {
+          ...msg,
+          content: msg.content + delta.text,
         };
         updated = true;
       } else if (delta.type === "tool_call") {
-        messages[lastIndex] = {
-          ...last,
-          tool_calls: [...(last.tool_calls || []), delta.tool],
+        messages[msgIndex] = {
+          ...msg,
+          tool_calls: [...(msg.tool_calls || []), delta.tool],
         };
         updated = true;
       }
@@ -100,5 +109,5 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
     }));
   },
   setMessages: (messages) => set({ messages }),
-  reset: () => set({ conversation: null, messages: [] }),
+  reset: () => set({ conversation: null, messages: [], currentTempAssistantId: null }),
 }));

@@ -1,217 +1,386 @@
-import OpenAI from "openai";
 import { createServerFn } from "@tanstack/react-start";
-import * as z from "zod";
+import { streamText, tool, type ToolSet } from "ai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { z } from "zod";
 import { db } from "./db.server";
 import { conversationsTable, messagesTable } from "@/db/schema";
 import { systemPrompt } from "@/lib/systemPrompt";
 import { eq, or } from "drizzle-orm";
 import { getCurrentUserFromCookie } from "./jwt.server";
-import { tools } from "@/tools/runpython";
 
-const client = new OpenAI({
+// Configure NVIDIA provider via OpenAI-compatible client
+const nvidia = createOpenAICompatible({
+  name: "nvidia",
   baseURL: "https://integrate.api.nvidia.com/v1",
-  apiKey: process.env.NVIDIA_API_KEY,
+  headers: {
+    Authorization: `Bearer ${process.env.NVIDIA_API_KEY}`,
+  },
 });
 
+// Tool definitions using AI SDK 6 pattern
+const tools: ToolSet = {
+  run_python: tool({
+    description:
+      "Execute Python code in a browser-based sandbox. Use for data analysis and transformations.",
+    inputSchema: z.object({
+      code: z.string().describe("Python code to execute"),
+    }),
+    execute: async () => ({
+      ok: true,
+      message: "Tool execution handled client-side",
+    }),
+  }),
+
+  search_web: tool({
+    description: "Search the web for current information and news.",
+    inputSchema: z.object({
+      query: z.string().describe("Search query"),
+      num_results: z.number().optional().default(5),
+    }),
+    execute: async ({ query, num_results }: { query: string; num_results: number }) => {
+      try {
+        const response = await fetch(
+          `https://api.duckduckgo.com/?q=${encodeURIComponent(
+            query
+          )}&format=json`,
+          { headers: { Accept: "application/json" } }
+        );
+        const data = await response.json();
+        return {
+          ok: true,
+          result: {
+            query,
+            abstract: data.Abstract || "",
+            results:
+              data.RelatedTopics?.slice(0, num_results).map(
+                (t: { Text?: string; FirstURL?: string }) => ({
+                  title: t.Text?.split(" - ")[0] || "",
+                  snippet: t.Text || "",
+                  url: t.FirstURL || "",
+                })
+              ) || [],
+          },
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : "Search failed",
+        };
+      }
+    },
+  }),
+
+  fetch_url: tool({
+    description: "Fetch content from a URL. Use for reading articles and docs.",
+    inputSchema: z.object({
+      url: z.string().describe("URL to fetch"),
+    }),
+    execute: async ({ url }: { url: string }) => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          return {
+            ok: false,
+            error: `HTTP ${response.status}`,
+          };
+        }
+        const html = await response.text();
+        const text = html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 10000);
+        return {
+          ok: true,
+          result: { url, content: text },
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : "Fetch failed",
+        };
+      }
+    },
+  }),
+};
+
+// Define message type for the API
+interface ChatMessage {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  // AI SDK internals - not displayed in UI but required for tool result linking
+  tool_call_id?: string;
+  tool_name?: string;
+}
+
+// AI SDK message types
+type SdkToolOutput = 
+  | { type: "json"; value: Record<string, unknown> | unknown[] | string | number | boolean | null }
+  | { type: "text"; value: string };
+
+interface SdkMessage {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string | Array<unknown>;
+}
+
+function parseToolOutput(content: string): SdkToolOutput {
+  try {
+    const parsedContent = JSON.parse(content) as Record<string, unknown> | unknown[] | string | number | boolean | null;
+    return {
+      type: "json",
+      value: parsedContent,
+    };
+  } catch {
+    return {
+      type: "text",
+      value: content,
+    };
+  }
+}
+
+function convertToolMessage(msg: ChatMessage, index: number): SdkMessage {
+  if (!msg.tool_call_id) {
+    console.warn(`Message ${index}: Tool message missing tool_call_id`);
+  }
+
+  const toolOutput = parseToolOutput(msg.content);
+
+  return {
+    role: "tool",
+    content: [{
+      type: "tool-result",
+      toolCallId: msg.tool_call_id || `call_${index}`,
+      toolName: msg.tool_name || "unknown",
+      output: toolOutput,
+    }],
+  };
+}
+
+function convertAssistantMessage(msg: ChatMessage): SdkMessage {
+  const contentParts: Array<{ type: "text"; text: string } | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }> = [];
+
+  if (msg.content) {
+    contentParts.push({ type: "text", text: msg.content });
+  }
+
+  msg.tool_calls?.forEach((tc) => {
+    try {
+      const input = JSON.parse(tc.function?.arguments || "{}");
+      contentParts.push({
+        type: "tool-call",
+        toolCallId: tc.id,
+        toolName: tc.function?.name || "unknown",
+        input,
+      });
+    } catch {
+      contentParts.push({
+        type: "tool-call",
+        toolCallId: tc.id,
+        toolName: tc.function?.name || "unknown",
+        input: {},
+      });
+    }
+  });
+
+  return {
+    role: "assistant",
+    content: contentParts,
+  };
+}
+
+function convertRegularMessage(msg: ChatMessage): SdkMessage {
+  const msgRole = msg.role;
+  if (msgRole === "user" || msgRole === "assistant" || msgRole === "system") {
+    return {
+      role: msgRole,
+      content: msg.content || "",
+    };
+  }
+  return {
+    role: "user",
+    content: msg.content || "",
+  };
+}
+
+function convertToSdkMessages(messages: ChatMessage[]): SdkMessage[] {
+  return messages.map((msg, index) => {
+    try {
+      if (msg.role === "tool") {
+        return convertToolMessage(msg, index);
+      }
+
+      if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
+        return convertAssistantMessage(msg);
+      }
+
+      return convertRegularMessage(msg);
+    } catch (err) {
+      console.error(`Error converting message ${index}:`, err, msg);
+      return {
+        role: "user" as const,
+        content: msg.content || "",
+      };
+    }
+  });
+}
+
+async function* handleStreamChunk(chunk: { type: string; text?: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; error?: unknown }): AsyncGenerator<string> {
+  switch (chunk.type) {
+    case "text-delta":
+      yield JSON.stringify({
+        type: "content",
+        text: chunk.text,
+      }) + "\n";
+      break;
+
+    case "reasoning-start":
+      yield JSON.stringify({
+        type: "reasoning-start",
+      }) + "\n";
+      break;
+
+    case "reasoning-delta":
+      yield JSON.stringify({
+        type: "reasoning",
+        text: (chunk as { text?: string }).text || "",
+      }) + "\n";
+      break;
+
+    case "reasoning-end":
+      yield JSON.stringify({
+        type: "reasoning-end",
+      }) + "\n";
+      break;
+
+    case "tool-call":
+      yield JSON.stringify({
+        type: "tool_call",
+        id: chunk.toolCallId,
+        name: chunk.toolName,
+        arguments: JSON.stringify(chunk.input),
+      }) + "\n";
+      break;
+
+    case "tool-result":
+      yield JSON.stringify({
+        type: "tool_result",
+        id: chunk.toolCallId,
+        result: chunk.output,
+      }) + "\n";
+      break;
+
+    case "error":
+      yield JSON.stringify({
+        type: "error",
+        error: String(chunk.error),
+      }) + "\n";
+      break;
+  }
+}
+
+async function* sendFinalStats(result: { usage: PromiseLike<{ inputTokens?: number; outputTokens?: number }>; finishReason: PromiseLike<string | undefined> }): AsyncGenerator<string> {
+  const usage = await result.usage;
+  yield JSON.stringify({
+    type: "usage",
+    prompt_tokens: usage?.inputTokens ?? 0,
+    completion_tokens: usage?.outputTokens ?? 0,
+  }) + "\n";
+
+  const finishReason = await result.finishReason;
+  yield JSON.stringify({
+    type: "finish",
+    reason: finishReason,
+  }) + "\n";
+}
+
+/**
+ * Stream chat completion with tool support
+ */
 export const generalChatStream = createServerFn({ method: "POST" })
   .inputValidator((body: unknown) => {
-    if (typeof body !== "object" || body === null || !("messages" in body)) {
-      throw new Error("Invalid request body");
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("messages" in body) ||
+      !Array.isArray((body as { messages: unknown }).messages)
+    ) {
+      throw new Error("Invalid request body: messages array required");
     }
-    return body as {
-      messages: OpenAI.Chat.ChatCompletionMessageParam[];
-    };
+    return body as { messages: ChatMessage[] };
   })
   .handler(async function* ({ data }) {
     const { messages } = data;
 
-    const completion = await client.chat.completions.create({
-      model: "z-ai/glm4.7",
-      messages: [{ role: "system", content: systemPrompt }, ...messages],
-      tools,
-      tool_choice: "auto",
-      stream: true,
-      stream_options: { include_usage: true },
-      temperature: 1,
-      top_p: 1,
-      max_tokens: 16384,
-    });
-
-    let reasoningBatch = "";
-    let contentBatch = "";
-    let lastFlush = Date.now();
-
-    let promptTokens = 0;
-    let completionTokens = 0;
-
-    const toolCalls: Record<
-      number,
-      {
-        id: string;
-        name: string;
-        arguments: string;
-      }
-    > = {};
-
     try {
-      for await (const chunk of completion) {
-        if (!chunk.choices || chunk.choices.length === 0) {
-          if (chunk.usage) {
-            promptTokens = chunk.usage.prompt_tokens ?? 0;
-            completionTokens = chunk.usage.completion_tokens ?? 0;
-          }
-          continue;
-        }
+      const sdkMessages = convertToSdkMessages(messages);
 
-        const delta = chunk.choices[0]?.delta;
-        if (!delta) continue;
+      const result = streamText({
+        model: nvidia("z-ai/glm4.7"),
+        system: systemPrompt,
+        messages: sdkMessages as any,
+        tools,
+        toolChoice: "auto",
+        temperature: 1,
+      });
 
-        const reasoning = (delta as { reasoning_content?: string })
-          .reasoning_content;
-        if (reasoning) reasoningBatch += reasoning;
-
-        if (delta.content) contentBatch += delta.content;
-
-        if (delta.tool_calls) {
-          for (const toolCall of delta.tool_calls) {
-            const index = toolCall.index;
-            if (index === undefined || index === null) continue;
-
-            if (!toolCalls[index]) {
-              toolCalls[index] = {
-                id: toolCall.id ?? `call_${index}`,
-                name: toolCall.function?.name ?? "",
-                arguments: "",
-              };
-            } else if (toolCall.id) {
-              toolCalls[index].id = toolCall.id;
-            }
-
-            if (toolCall.function?.name) {
-              toolCalls[index].name = toolCall.function.name;
-            }
-
-            if (toolCall.function?.arguments) {
-              toolCalls[index].arguments += toolCall.function.arguments;
-            }
-          }
-        }
-
-        const now = Date.now();
-        if (now - lastFlush > 100) {
-          if (reasoningBatch) {
-            yield JSON.stringify({ type: "reasoning", text: reasoningBatch }) +
-              "\n";
-            reasoningBatch = "";
-          }
-          if (contentBatch) {
-            yield JSON.stringify({ type: "content", text: contentBatch }) +
-              "\n";
-            contentBatch = "";
-          }
-
-          for (const [index, call] of Object.entries(toolCalls)) {
-            const rawArgs = call.arguments ?? "";
-            if (!rawArgs.trim()) continue;
-            try {
-              JSON.parse(rawArgs);
-              yield JSON.stringify({
-                type: "tool_call",
-                id: call.id,
-                name: call.name,
-                arguments: rawArgs,
-              }) + "\n";
-              delete toolCalls[parseInt(index)];
-            } catch {}
-          }
-
-          lastFlush = now;
-        }
-      }
-    } finally {
-      if (reasoningBatch) {
-        yield JSON.stringify({ type: "reasoning", text: reasoningBatch }) +
-          "\n";
-      }
-      if (contentBatch) {
-        yield JSON.stringify({ type: "content", text: contentBatch }) + "\n";
+      for await (const chunk of result.fullStream) {
+        yield* handleStreamChunk(chunk as { type: string; text?: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; error?: unknown });
       }
 
-      for (const call of Object.values(toolCalls)) {
-        const rawArgs = call.arguments ?? "";
-        if (!rawArgs || !rawArgs.trim()) {
-          yield JSON.stringify({
-            type: "tool_call_error",
-            id: call.id,
-            name: call.name,
-            raw_arguments: rawArgs,
-            reason: "empty_arguments",
-          }) + "\n";
-          continue;
-        }
-
-        try {
-          JSON.parse(rawArgs);
-          yield JSON.stringify({
-            type: "tool_call",
-            id: call.id,
-            name: call.name,
-            arguments: rawArgs,
-          }) + "\n";
-        } catch (err) {
-          yield JSON.stringify({
-            type: "tool_call_error",
-            id: call.id,
-            name: call.name,
-            raw_arguments: rawArgs,
-            reason: "invalid_json",
-            error_message: String(err),
-          }) + "\n";
-        }
-      }
-
+      yield* sendFinalStats(result);
+    } catch (error) {
+      console.error("[Chat Stream] Error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Stream failed";
       yield JSON.stringify({
-        type: "usage",
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
+        type: "error",
+        error: errorMessage,
       }) + "\n";
     }
   });
 
+// Schema for conversation creation
 const newConversationSchema = z.object({
   workspace_id: z.string(),
   title: z.string(),
 });
 
 export const newConversation = createServerFn({ method: "POST" })
-  .inputValidator((data) => {
-    const parsed = newConversationSchema.safeParse(data);
-    return parsed;
-  })
+  .inputValidator((data) => newConversationSchema.safeParse(data))
   .handler(async ({ data }) => {
-    if (data.error) {
-      console.error(data.error);
-      throw new Error("Invalid conversation data");
+    if (!data.success) {
+      throw new Error("Invalid conversation data: " + data.error.message);
     }
-    const { workspace_id, title } = data.data;
+
     try {
-      const conversation = await db
+      const [conversation] = await db
         .insert(conversationsTable)
         .values({
-          workspace_id: workspace_id,
-          title: title,
+          workspace_id: data.data.workspace_id,
+          title: data.data.title,
         })
         .returning();
+
       return {
-        success: true,
-        data: conversation[0],
+        success: true as const,
+        data: conversation,
       };
     } catch (error) {
-      console.error(error);
+      console.error("Create conversation error:", error);
       throw new Error("Error creating conversation");
     }
   });
 
+// Schema for tool calls in messages
 const toolCallSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -219,46 +388,49 @@ const toolCallSchema = z.object({
   result: z.string().optional(),
 });
 
+// Schema for message creation
 const newMessageSchema = z.array(
   z.object({
     workspace_id: z.string(),
     conversation_id: z.string(),
     role: z.enum(["user", "assistant", "tool"]),
     content: z.string(),
-    reasoning: z.string().optional(),
+    reasoning: z.string().nullable().optional(),
     is_complete: z.boolean().optional(),
-    prompt_tokens: z.number().optional(),
-    completion_tokens: z.number().optional(),
-    tool_calls: z.array(toolCallSchema).optional(),
-  }),
+    prompt_tokens: z.number().nullable().optional(),
+    completion_tokens: z.number().nullable().optional(),
+    tool_calls: z.array(toolCallSchema).nullable().optional(),
+  })
 );
 
 export const newMessage = createServerFn({ method: "POST" })
-  .inputValidator((data) => {
-    const parsed = newMessageSchema.safeParse(data);
-    return parsed;
-  })
+  .inputValidator((data) => newMessageSchema.safeParse(data))
   .handler(async ({ data }) => {
-    if (data.error) {
-      return { success: false, error: data.error.message };
+    if (!data.success) {
+      return {
+        success: false as const,
+        error: data.error.message,
+      };
     }
+
     try {
       const messages = await db
         .insert(messagesTable)
         .values(data.data)
         .returning();
+
       return {
-        success: true,
+        success: true as const,
         data: messages,
       };
     } catch (error) {
-      console.error(error);
+      console.error("Create message error:", error);
       return {
-        success: false,
+        success: false as const,
         error:
           error instanceof Error
-            ? { message: error.message }
-            : { message: "Unknown error" },
+            ? error.message
+            : "Failed to save message",
       };
     }
   });
@@ -272,39 +444,41 @@ export const getConversation = createServerFn({ method: "GET" })
     const user = getCurrentUserFromCookie();
     if (!user) {
       return {
-        success: false,
-        error: { message: "Unauthorized" },
+        success: false as const,
+        error: "Unauthorized",
       };
     }
+
     try {
-      const conversation = await db
+      const [conversation] = await db
         .select()
         .from(conversationsTable)
         .where(eq(conversationsTable.workspace_id, data));
+
       return {
-        success: true,
-        data: conversation[0],
+        success: true as const,
+        data: conversation,
       };
     } catch (error) {
-      console.error(error);
+      console.error("Get conversation error:", error);
       throw new Error("Error retrieving conversation");
     }
   });
 
 export const getMessages = createServerFn({ method: "GET" })
   .inputValidator((id: unknown) => {
-    if (typeof id !== "string")
-      throw new Error("Invalid conversation/workspace ID");
+    if (typeof id !== "string") throw new Error("Invalid ID");
     return id;
   })
   .handler(async ({ data }) => {
     const user = getCurrentUserFromCookie();
     if (!user) {
       return {
-        success: false,
-        error: { message: "Unauthorized" },
+        success: false as const,
+        error: "Unauthorized",
       };
     }
+
     try {
       const messages = await db
         .select()
@@ -312,16 +486,17 @@ export const getMessages = createServerFn({ method: "GET" })
         .where(
           or(
             eq(messagesTable.conversation_id, data),
-            eq(messagesTable.workspace_id, data),
-          ),
+            eq(messagesTable.workspace_id, data)
+          )
         )
         .orderBy(messagesTable.created_at);
+
       return {
-        success: true,
+        success: true as const,
         data: messages,
       };
     } catch (error) {
-      console.error(error);
+      console.error("Get messages error:", error);
       throw new Error("Error retrieving messages");
     }
   });

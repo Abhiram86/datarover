@@ -2,6 +2,7 @@ import { useConversationStore } from "@/store/conversation";
 import { PromptBox } from "./PromptBox";
 import { Markdown } from "../Markdown";
 import { HistorySkeleton } from "@/components/skeletons/HistorySkeleton";
+import { LoadingIndicator } from "./LoadingIndicator";
 import { ChevronDown, Brain, Terminal } from "lucide-react";
 import { useState, memo, useMemo, useEffect } from "react";
 import type { Message } from "@/types";
@@ -48,7 +49,7 @@ const MessageItem = memo(
           {msg.reasoning && (
             <ReasoningDropdown
               reasoning={msg.reasoning}
-              isProcessing={isLast && msg.role === "assistant" && !msg.content}
+              isProcessing={isLast && msg.role === "assistant" && !msg.content && !msg.is_complete}
             />
           )}
 
@@ -60,9 +61,16 @@ const MessageItem = memo(
             </div>
           )}
 
-          <div className="text-neutral-strong/90">
-            <Markdown className="prose-md" content={msg.content} />
-          </div>
+          {/* Show loading indicator when assistant is still thinking */}
+          {!msg.content && !msg.is_complete ? (
+            <LoadingIndicator message="Thinking..." />
+          ) : (
+            msg.content && (
+              <div className="text-neutral-strong/90">
+                <Markdown className="prose-md" content={msg.content} />
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
@@ -178,7 +186,11 @@ const History = ({
     !initialConversation &&
     (conversationLoading || messagesLoading);
   const hasError = conversationError || messagesError;
-  const memoizedMessages = useMemo(() => messages, [messages]);
+  // Filter out tool messages from display (they're for backend context only)
+  const displayMessages = useMemo(() => 
+    messages.filter((msg) => msg.role !== "tool"),
+    [messages]
+  );
 
   return (
     <div className="flex flex-col h-full bg-primary overflow-hidden">
@@ -205,11 +217,11 @@ const History = ({
           [&::-webkit-scrollbar-thumb]:rounded-full
           hover:[&::-webkit-scrollbar-thumb]:bg-neutral-strong/60"
           >
-            {memoizedMessages.map((msg, idx) => (
+            {displayMessages.map((msg, idx) => (
               <MessageItem
                 key={msg.id}
                 msg={msg}
-                isLast={idx === memoizedMessages.length - 1}
+                isLast={idx === displayMessages.length - 1}
               />
             ))}
           </div>

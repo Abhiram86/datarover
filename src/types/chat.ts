@@ -27,4 +27,7 @@ export type Message = {
   completion_tokens: number | null;
   created_at: Date | null;
   tool_calls?: ToolCall[];
+  // AI SDK internals - not displayed in UI but required for tool result linking
+  tool_call_id?: string | null;
+  tool_name?: string | null;
 };

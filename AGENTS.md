@@ -42,6 +42,7 @@
 - Server functions use `createServerFn` with `method` and `inputValidator`
 - Validate inputs with Zod schemas
 - Return consistent error shape: `{ success: boolean; data?: T; error?: { message: string }; }`
+- Use try/catch in handlers with proper error instanceof Error checks
 
 ### Database & Drizzle ORM
 
@@ -81,7 +82,15 @@
 - `src/utils/` - Utility functions, `.server.ts` for server-side
 - `src/store/` - Zustand stores
 - `src/db/` - Database schema and related code
+- `src/hooks/` - Custom React hooks
+- `src/types/` - Shared TypeScript types
 - Auto-generated file: `routeTree.gen.ts` (read-only, excluded from git)
+
+### Route Structure
+
+- `_authed.tsx` - Layout wrapper for authenticated routes
+- `_authed/workspace/` - Authenticated workspace routes
+- Use `$param` syntax for dynamic segments (e.g., `$slug.tsx`)
 
 ### Zustand Store Pattern
 
@@ -100,7 +109,7 @@
 
 - `.vscode/settings.json` - Excludes routeTree.gen.ts from search/watcher
 - `drizzle.config.ts` - Drizzle ORM configuration
-- `vitest.config.ts` - Vitest configuration
+- `tsconfig.json` - TypeScript strict mode with path aliases configured
 - No explicit linting/formatting configs - follow TypeScript strict mode conventions
 
 ## AI SDK Integration
