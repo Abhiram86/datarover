@@ -3,6 +3,8 @@
 import type { MainToWorker } from "./types/pyodide";
 
 let pyodide: any | null = null;
+const pendingQueries: Record<number, any> = {};
+let nextId = 1;
 
 async function initPyodide() {
   if (pyodide) return;
@@ -14,6 +16,39 @@ async function initPyodide() {
   pyodide = await loadPyodide({
     indexURL: "https://cdn.jsdelivr.net/pyodide/v0.23.2/full/",
   });
+
+  pyodide.registerJsModule("duckdb", {
+    async sql(query: string) {
+      return new Promise((resolve, reject) => {
+        const id = nextId++;
+        pendingQueries[id] = { resolve, reject };
+        self.postMessage({
+          type: "DUCKDB_QUERY",
+          id,
+          query,
+        });
+      });
+    },
+  });
+
+  await pyodide.loadPackage([
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "numpy",
+    "matplotlib",
+  ]);
+  await pyodide.runPythonAsync(`
+    import json
+    import asyncio
+    import numpy as np
+    import pandas as pd
+    from duckdb import sql
+    
+    globals()["np"] = np
+    globals()["pd"] = pd
+    globals()["sql"] = sql
+  `);
 
   // ✅ Proper stdout redirection
   pyodide.setStdout({
@@ -79,6 +114,20 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
         });
       }
 
+      break;
+    }
+
+    case "DUCKDB_RESULT": {
+      const { id, result } = message;
+      const json = JSON.stringify(result);
+      pendingQueries[id]?.resolve(json);
+      delete pendingQueries[id];
+      break;
+    }
+    case "DUCKDB_ERROR": {
+      const { id, error } = message;
+      pendingQueries[id]?.reject(error);
+      delete pendingQueries[id];
       break;
     }
   }

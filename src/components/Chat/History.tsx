@@ -63,7 +63,7 @@ const MessageItem = memo(
 
           {/* Show loading indicator when assistant is still thinking */}
           {!msg.content && !msg.is_complete ? (
-            <LoadingIndicator message="Thinking..." />
+            <LoadingIndicator message="Processing..." />
           ) : (
             msg.content && (
               <div className="text-neutral-strong/90">

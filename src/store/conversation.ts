@@ -6,6 +6,7 @@ interface ConversationStoreState {
   messages: Message[];
   currentTempAssistantId: string | null;
   newAssistantStep: (tempId: string) => void;
+  completeAssistantStep: (tempId: string) => void;
   updateMessagesConversationId: (
     tempConvoId: string,
     realConvoId: string,
@@ -30,6 +31,12 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
   messages: [],
   currentTempAssistantId: null,
   newAssistantStep: (tempId: string) => set({ currentTempAssistantId: tempId }),
+  completeAssistantStep: (tempId: string) =>
+    set((state) => ({
+      messages: state.messages.map((msg) =>
+        msg.id === tempId ? { ...msg, is_complete: true } : msg
+      ),
+    })),
   updateMessagesConversationId: (tempConvoId: string, realConvoId: string) => {
     set((state) => ({
       messages: state.messages.map((msg) =>

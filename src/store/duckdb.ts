@@ -26,7 +26,7 @@ interface DuckDBState {
   columnNames: string[];
   initialize: () => Promise<void>;
   loadParquet: (buffer: Uint8Array, tableName?: string) => Promise<void>;
-  query: (sql: string) => Promise<any[]>;
+  query: (sql: string) => Promise<{ ok: boolean; result: any[]; error?: any }>;
   getPreviewRows: (limit?: number) => Promise<any[]>;
   close: () => Promise<void>;
 }
@@ -117,8 +117,21 @@ export const useDuckDBStore = create<DuckDBState>((set, get) => ({
     const { conn } = get();
     if (!conn) throw new Error("DuckDB not initialized");
 
-    const result = await conn.query(sql);
-    return result.toArray().map((row: any) => row.toJSON());
+    try {
+      const result = await conn.query(sql);
+      return {
+        ok: true,
+        result: result.toArray().map(normalizeRow),
+        error: null,
+      };
+    } catch (error) {
+      console.error("Query error:", error);
+      return {
+        ok: false,
+        result: [],
+        error: error instanceof Error ? error.message : "Query failed",
+      };
+    }
   },
 
   getPreviewRows: async (limit = 2000) => {

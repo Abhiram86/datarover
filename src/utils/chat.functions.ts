@@ -31,19 +31,41 @@ const tools: ToolSet = {
     }),
   }),
 
+  run_duckdb: tool({
+    description:
+      "Manipulate and query dataset using DuckDB. Use this for data analysis, transformations, and calculations.",
+    inputSchema: z.object({
+      query: z
+        .string()
+        .describe(
+          "DuckDB query to execute. Can include CREATE TABLE, INSERT, SELECT, and any valid DuckDB syntax.",
+        ),
+    }),
+    execute: async () => ({
+      ok: true,
+      message: "Tool execution handled client-side",
+    }),
+  }),
+
   search_web: tool({
     description: "Search the web for current information and news.",
     inputSchema: z.object({
       query: z.string().describe("Search query"),
       num_results: z.number().optional().default(5),
     }),
-    execute: async ({ query, num_results }: { query: string; num_results: number }) => {
+    execute: async ({
+      query,
+      num_results,
+    }: {
+      query: string;
+      num_results: number;
+    }) => {
       try {
         const response = await fetch(
           `https://api.duckduckgo.com/?q=${encodeURIComponent(
-            query
+            query,
           )}&format=json`,
-          { headers: { Accept: "application/json" } }
+          { headers: { Accept: "application/json" } },
         );
         const data = await response.json();
         return {
@@ -57,7 +79,7 @@ const tools: ToolSet = {
                   title: t.Text?.split(" - ")[0] || "",
                   snippet: t.Text || "",
                   url: t.FirstURL || "",
-                })
+                }),
               ) || [],
           },
         };
@@ -124,8 +146,17 @@ interface ChatMessage {
 }
 
 // AI SDK message types
-type SdkToolOutput = 
-  | { type: "json"; value: Record<string, unknown> | unknown[] | string | number | boolean | null }
+type SdkToolOutput =
+  | {
+      type: "json";
+      value:
+        | Record<string, unknown>
+        | unknown[]
+        | string
+        | number
+        | boolean
+        | null;
+    }
   | { type: "text"; value: string };
 
 interface SdkMessage {
@@ -135,7 +166,13 @@ interface SdkMessage {
 
 function parseToolOutput(content: string): SdkToolOutput {
   try {
-    const parsedContent = JSON.parse(content) as Record<string, unknown> | unknown[] | string | number | boolean | null;
+    const parsedContent = JSON.parse(content) as
+      | Record<string, unknown>
+      | unknown[]
+      | string
+      | number
+      | boolean
+      | null;
     return {
       type: "json",
       value: parsedContent,
@@ -157,17 +194,27 @@ function convertToolMessage(msg: ChatMessage, index: number): SdkMessage {
 
   return {
     role: "tool",
-    content: [{
-      type: "tool-result",
-      toolCallId: msg.tool_call_id || `call_${index}`,
-      toolName: msg.tool_name || "unknown",
-      output: toolOutput,
-    }],
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: msg.tool_call_id || `call_${index}`,
+        toolName: msg.tool_name || "unknown",
+        output: toolOutput,
+      },
+    ],
   };
 }
 
 function convertAssistantMessage(msg: ChatMessage): SdkMessage {
-  const contentParts: Array<{ type: "text"; text: string } | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }> = [];
+  const contentParts: Array<
+    | { type: "text"; text: string }
+    | {
+        type: "tool-call";
+        toolCallId: string;
+        toolName: string;
+        input: unknown;
+      }
+  > = [];
 
   if (msg.content) {
     contentParts.push({ type: "text", text: msg.content });
@@ -219,7 +266,11 @@ function convertToSdkMessages(messages: ChatMessage[]): SdkMessage[] {
         return convertToolMessage(msg, index);
       }
 
-      if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
+      if (
+        msg.role === "assistant" &&
+        msg.tool_calls &&
+        msg.tool_calls.length > 0
+      ) {
         return convertAssistantMessage(msg);
       }
 
@@ -234,7 +285,15 @@ function convertToSdkMessages(messages: ChatMessage[]): SdkMessage[] {
   });
 }
 
-async function* handleStreamChunk(chunk: { type: string; text?: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; error?: unknown }): AsyncGenerator<string> {
+async function* handleStreamChunk(chunk: {
+  type: string;
+  text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  input?: unknown;
+  output?: unknown;
+  error?: unknown;
+}): AsyncGenerator<string> {
   switch (chunk.type) {
     case "text-delta":
       yield JSON.stringify({
@@ -288,7 +347,10 @@ async function* handleStreamChunk(chunk: { type: string; text?: string; toolCall
   }
 }
 
-async function* sendFinalStats(result: { usage: PromiseLike<{ inputTokens?: number; outputTokens?: number }>; finishReason: PromiseLike<string | undefined> }): AsyncGenerator<string> {
+async function* sendFinalStats(result: {
+  usage: PromiseLike<{ inputTokens?: number; outputTokens?: number }>;
+  finishReason: PromiseLike<string | undefined>;
+}): AsyncGenerator<string> {
   const usage = await result.usage;
   yield JSON.stringify({
     type: "usage",
@@ -334,13 +396,24 @@ export const generalChatStream = createServerFn({ method: "POST" })
       });
 
       for await (const chunk of result.fullStream) {
-        yield* handleStreamChunk(chunk as { type: string; text?: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; error?: unknown });
+        yield* handleStreamChunk(
+          chunk as {
+            type: string;
+            text?: string;
+            toolCallId?: string;
+            toolName?: string;
+            input?: unknown;
+            output?: unknown;
+            error?: unknown;
+          },
+        );
       }
 
       yield* sendFinalStats(result);
     } catch (error) {
       console.error("[Chat Stream] Error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Stream failed";
+      const errorMessage =
+        error instanceof Error ? error.message : "Stream failed";
       yield JSON.stringify({
         type: "error",
         error: errorMessage,
@@ -400,7 +473,7 @@ const newMessageSchema = z.array(
     prompt_tokens: z.number().nullable().optional(),
     completion_tokens: z.number().nullable().optional(),
     tool_calls: z.array(toolCallSchema).nullable().optional(),
-  })
+  }),
 );
 
 export const newMessage = createServerFn({ method: "POST" })
@@ -428,9 +501,7 @@ export const newMessage = createServerFn({ method: "POST" })
       return {
         success: false as const,
         error:
-          error instanceof Error
-            ? error.message
-            : "Failed to save message",
+          error instanceof Error ? error.message : "Failed to save message",
       };
     }
   });
@@ -486,8 +557,8 @@ export const getMessages = createServerFn({ method: "GET" })
         .where(
           or(
             eq(messagesTable.conversation_id, data),
-            eq(messagesTable.workspace_id, data)
-          )
+            eq(messagesTable.workspace_id, data),
+          ),
         )
         .orderBy(messagesTable.created_at);
 

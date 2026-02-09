@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { WorkerToMain, MainToWorker } from "../types/pyodide";
 import PyodideWorker from "../worker.ts?worker";
+import { useDuckDBStore } from "./duckdb";
 
 interface Pending {
   resolve: (value: unknown) => void;
@@ -18,9 +19,7 @@ interface SandboxStore {
   init: () => void;
   clearConsole: () => void;
   runPython: (code: string) => Promise<unknown>;
-  runPythonSafe: (
-    code: string,
-  ) => Promise<{
+  runPythonSafe: (code: string) => Promise<{
     ok: boolean;
     result?: unknown;
     error?: unknown;
@@ -44,7 +43,7 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
 
     const worker = new PyodideWorker();
 
-    worker.onmessage = (e: MessageEvent<WorkerToMain>) => {
+    worker.onmessage = async (e: MessageEvent<WorkerToMain>) => {
       const msg = e.data;
 
       if (msg.type === "STDOUT") {
@@ -64,6 +63,24 @@ export const useSandboxStore = create<SandboxStore>((set, get) => ({
       if (msg.type === "PYODIDE_READY") {
         set({ ready: true });
         return;
+      }
+
+      if (msg.type === "DUCKDB_QUERY") {
+        try {
+          const result = await useDuckDBStore.getState().query(msg.query);
+          worker.postMessage({
+            type: "DUCKDB_RESULT",
+            id: msg.id,
+            result,
+          });
+        } catch (error) {
+          console.error("DuckDB query error:", error);
+          worker.postMessage({
+            type: "DUCKDB_ERROR",
+            id: msg.id,
+            error: error instanceof Error ? error.message : "Query failed",
+          });
+        }
       }
 
       if (msg.type === "EXEC_ERROR" && msg.id === -1) {

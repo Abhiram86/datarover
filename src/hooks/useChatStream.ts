@@ -3,6 +3,7 @@ import { generalChatStream } from "@/utils/chat.functions";
 import { useSandboxStore } from "@/store/sandbox";
 import { useConversationStore } from "@/store/conversation";
 import type { ToolCall } from "@/types";
+import { useDuckDBStore } from "@/store/duckdb";
 
 // Message type for the chat API
 export interface ChatMessage {
@@ -48,7 +49,16 @@ export interface StreamResult {
 }
 
 export interface StreamEvent {
-  type: "content" | "reasoning" | "reasoning-start" | "reasoning-end" | "tool_call" | "tool_result" | "usage" | "error" | "finish";
+  type:
+    | "content"
+    | "reasoning"
+    | "reasoning-start"
+    | "reasoning-end"
+    | "tool_call"
+    | "tool_result"
+    | "usage"
+    | "error"
+    | "finish";
   text?: string;
   id?: string;
   name?: string;
@@ -89,8 +99,10 @@ function initializeStepState(): StepState {
 
 function createInitialContext(initialMessages: ChatMessage[]): StreamContext {
   const messagesToSave: MessageToSave[] = [];
-  const lastUserMessage = initialMessages.filter(m => m.role === "user").pop();
-  
+  const lastUserMessage = initialMessages
+    .filter((m) => m.role === "user")
+    .pop();
+
   if (lastUserMessage) {
     messagesToSave.push({
       role: "user",
@@ -123,11 +135,11 @@ function initializeAssistantStep(
     completion_tokens: null;
     created_at: null;
   }) => void,
-  newAssistantStep: (id: string) => void
+  newAssistantStep: (id: string) => void,
 ): string {
   const tempAssistantId = `temp-assistant-step-${stepCount}-${Date.now()}`;
   newAssistantStep(tempAssistantId);
-  
+
   addMessage({
     id: tempAssistantId,
     workspace_id: "workspace",
@@ -149,8 +161,14 @@ function handleStreamEvent(
   stepState: StepState,
   context: StreamContext,
   tempAssistantId: string,
-  addStreamMessage: (delta: string | { type: "reasoning" | "content"; text: string } | { type: "tool_call"; tool: ToolCall }, tempId?: string) => void,
-  onStreamEvent: (event: StreamEvent) => void
+  addStreamMessage: (
+    delta:
+      | string
+      | { type: "reasoning" | "content"; text: string }
+      | { type: "tool_call"; tool: ToolCall },
+    tempId?: string,
+  ) => void,
+  onStreamEvent: (event: StreamEvent) => void,
 ): void {
   switch (event.type) {
     case "reasoning-start":
@@ -160,7 +178,10 @@ function handleStreamEvent(
     case "reasoning":
       if (event.text) {
         stepState.stepReasoning += event.text;
-        addStreamMessage({ type: "reasoning", text: event.text }, tempAssistantId);
+        addStreamMessage(
+          { type: "reasoning", text: event.text },
+          tempAssistantId,
+        );
         onStreamEvent(event);
       }
       break;
@@ -172,7 +193,10 @@ function handleStreamEvent(
     case "content":
       if (event.text) {
         stepState.stepContent += event.text;
-        addStreamMessage({ type: "content", text: event.text }, tempAssistantId);
+        addStreamMessage(
+          { type: "content", text: event.text },
+          tempAssistantId,
+        );
         onStreamEvent(event);
       }
       break;
@@ -187,15 +211,19 @@ function handleStreamEvent(
         };
         stepState.stepToolCalls.push(toolCall);
         context.allToolCalls.push(toolCall);
-        addStreamMessage({ type: "tool_call", tool: toolCall }, tempAssistantId);
+        addStreamMessage(
+          { type: "tool_call", tool: toolCall },
+          tempAssistantId,
+        );
         onStreamEvent(event);
       }
       break;
 
     case "tool_result":
       if (event.id && event.result) {
-        const toolCall = stepState.stepToolCalls.find(tc => tc.id === event.id) || 
-                        context.allToolCalls.find(tc => tc.id === event.id);
+        const toolCall =
+          stepState.stepToolCalls.find((tc) => tc.id === event.id) ||
+          context.allToolCalls.find((tc) => tc.id === event.id);
         if (toolCall) {
           toolCall.result = JSON.stringify(event.result);
         }
@@ -205,7 +233,8 @@ function handleStreamEvent(
 
     case "usage":
       context.promptTokens = event.prompt_tokens ?? context.promptTokens;
-      context.completionTokens = event.completion_tokens ?? context.completionTokens;
+      context.completionTokens =
+        event.completion_tokens ?? context.completionTokens;
       onStreamEvent(event);
       break;
 
@@ -224,7 +253,7 @@ function saveAssistantStepMessage(
   stepState: StepState,
   context: StreamContext,
   promptTokens: number,
-  completionTokens: number
+  completionTokens: number,
 ): void {
   context.messagesToSave.push({
     role: "assistant",
@@ -242,14 +271,15 @@ function saveAssistantStepMessage(
       context.messagesToSave[finalMsgIndex].is_complete = true;
       context.messagesToSave[finalMsgIndex].is_final_response = true;
       context.messagesToSave[finalMsgIndex].prompt_tokens = promptTokens;
-      context.messagesToSave[finalMsgIndex].completion_tokens = completionTokens;
+      context.messagesToSave[finalMsgIndex].completion_tokens =
+        completionTokens;
     }
   }
 }
 
 function addAssistantMessageToConversation(
   stepState: StepState,
-  context: StreamContext
+  context: StreamContext,
 ): void {
   const assistantMessage: ChatMessage = {
     role: "assistant",
@@ -268,8 +298,21 @@ function addAssistantMessageToConversation(
 
 async function executeToolCall(
   toolCall: ToolCall,
-  runPython: (code: string) => Promise<{ ok: boolean; result?: unknown; error?: unknown; consoleOutput?: string[] }>
-): Promise<{ ok: boolean; result?: unknown; error?: unknown; consoleOutput?: string[] }> {
+  runPython: (code: string) => Promise<{
+    ok: boolean;
+    result?: unknown;
+    error?: unknown;
+    consoleOutput?: string[];
+  }>,
+  runDuckDB: (
+    query: string,
+  ) => Promise<{ ok: boolean; result?: unknown; error?: unknown }>,
+): Promise<{
+  ok: boolean;
+  result?: unknown;
+  error?: unknown;
+  consoleOutput?: string[];
+}> {
   if (toolCall.name === "run_python") {
     try {
       const args = JSON.parse(toolCall.arguments);
@@ -279,7 +322,8 @@ async function executeToolCall(
     } catch (execError) {
       const toolResult = {
         ok: false,
-        error: execError instanceof Error ? execError.message : "Execution failed",
+        error:
+          execError instanceof Error ? execError.message : "Execution failed",
       };
       toolCall.result = JSON.stringify(toolResult);
       console.error(`[Chat Stream] run_python error:`, toolResult.error);
@@ -287,15 +331,38 @@ async function executeToolCall(
     }
   }
 
-  return toolCall.result 
+  if (toolCall.name === "run_duckdb") {
+    try {
+      const args = JSON.parse(toolCall.arguments);
+      const toolResult = await runDuckDB(args.query);
+      toolCall.result = JSON.stringify(toolResult);
+      return toolResult;
+    } catch (execError) {
+      const toolResult = {
+        ok: false,
+        error:
+          execError instanceof Error ? execError.message : "Execution failed",
+      };
+      toolCall.result = JSON.stringify(toolResult);
+      console.error(`[Chat Stream] run_python error:`, toolResult.error);
+      return toolResult;
+    }
+  }
+
+  return toolCall.result
     ? JSON.parse(toolCall.result)
     : { ok: true, result: "Executed on server" };
 }
 
 function addToolResultToConversation(
   toolCall: ToolCall,
-  toolResult: { ok: boolean; result?: unknown; error?: unknown; consoleOutput?: string[] },
-  context: StreamContext
+  toolResult: {
+    ok: boolean;
+    result?: unknown;
+    error?: unknown;
+    consoleOutput?: string[];
+  },
+  context: StreamContext,
 ): void {
   const toolMessage: ChatMessage = {
     role: "tool",
@@ -314,11 +381,14 @@ function addToolResultToConversation(
   });
 }
 
-function extractFinalResults(context: StreamContext): { finalContent: string; finalReasoning: string | null } {
+function extractFinalResults(context: StreamContext): {
+  finalContent: string;
+  finalReasoning: string | null;
+} {
   const finalAssistantMsg = context.messagesToSave
-    .filter(m => m.role === "assistant" && m.is_final_response)
+    .filter((m) => m.role === "assistant" && m.is_final_response)
     .pop();
-  
+
   if (finalAssistantMsg) {
     return {
       finalContent: finalAssistantMsg.content,
@@ -332,15 +402,19 @@ function extractFinalResults(context: StreamContext): { finalContent: string; fi
 export function useChatStream() {
   const addStreamMessage = useConversationStore((s) => s.addStreamMessage);
   const newAssistantStep = useConversationStore((s) => s.newAssistantStep);
+  const completeAssistantStep = useConversationStore(
+    (s) => s.completeAssistantStep,
+  );
   const addMessage = useConversationStore((s) => s.addMessage);
   const runPython = useSandboxStore((s) => s.runPythonSafe);
+  const query = useDuckDBStore((s) => s.query);
 
   const readChatStream = useCallback(
     async (
       initialMessages: ChatMessage[],
-      onStreamEvent: (event: StreamEvent) => void
+      onStreamEvent: (event: StreamEvent) => void,
     ): Promise<StreamResult> => {
-      const MAX_STEPS = 3;
+      const MAX_STEPS = 15;
       const context = createInitialContext(initialMessages);
       const stepState = initializeStepState();
 
@@ -351,7 +425,7 @@ export function useChatStream() {
           const tempAssistantId = initializeAssistantStep(
             stepState.stepCount,
             addMessage,
-            newAssistantStep
+            newAssistantStep,
           );
           context.stepTempIds.push(tempAssistantId);
 
@@ -360,7 +434,9 @@ export function useChatStream() {
           stepState.stepHadToolCall = false;
           stepState.stepToolCalls = [];
 
-          const stream = await generalChatStream({ data: { messages: context.messages } });
+          const stream = await generalChatStream({
+            data: { messages: context.messages },
+          });
 
           for await (const chunk of stream) {
             const lines = chunk.split("\n").filter(Boolean);
@@ -374,29 +450,42 @@ export function useChatStream() {
                   context,
                   tempAssistantId,
                   addStreamMessage,
-                  onStreamEvent
+                  onStreamEvent,
                 );
               } catch (error) {
-                console.error("[Chat Stream] Failed to parse stream chunk:", line, error);
+                console.error(
+                  "[Chat Stream] Failed to parse stream chunk:",
+                  line,
+                  error,
+                );
               }
             }
           }
+
+          completeAssistantStep(tempAssistantId);
 
           saveAssistantStepMessage(
             stepState,
             context,
             context.promptTokens,
-            context.completionTokens
+            context.completionTokens,
           );
 
-          if (!stepState.stepHadToolCall || stepState.stepToolCalls.length === 0) {
+          if (
+            !stepState.stepHadToolCall ||
+            stepState.stepToolCalls.length === 0
+          ) {
             break;
           }
 
           addAssistantMessageToConversation(stepState, context);
 
           for (const toolCall of stepState.stepToolCalls) {
-            const toolResult = await executeToolCall(toolCall, runPython);
+            const toolResult = await executeToolCall(
+              toolCall,
+              runPython,
+              query,
+            );
             addToolResultToConversation(toolCall, toolResult, context);
           }
         }
@@ -417,7 +506,14 @@ export function useChatStream() {
         throw error;
       }
     },
-    [addStreamMessage, newAssistantStep, addMessage, runPython]
+    [
+      addStreamMessage,
+      newAssistantStep,
+      completeAssistantStep,
+      addMessage,
+      runPython,
+      query,
+    ],
   );
 
   return readChatStream;

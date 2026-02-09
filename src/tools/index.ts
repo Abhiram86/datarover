@@ -6,6 +6,7 @@ import { webFetchTool } from "./webFetch";
 
 // Re-export individual tool definitions
 export { runPythonTool } from "./runPython";
+export { runDuckDBTool } from "./duckb";
 export { webSearchTool } from "./webSearch";
 export { webFetchTool } from "./webFetch";
 
@@ -24,6 +25,7 @@ export interface ToolResult {
  */
 export interface ToolContext {
   runPython?: (code: string) => Promise<ToolResult>;
+  runDuckDB?: (query: string) => Promise<ToolResult>;
 }
 
 /**
@@ -44,7 +46,10 @@ export type StreamEvent =
   | { type: "reasoning"; text: string }
   | { type: "tool-call"; toolCall: ToolCall }
   | { type: "tool-result"; toolCallId: string; result: ToolResult }
-  | { type: "finish"; usage: { promptTokens: number; completionTokens: number } }
+  | {
+      type: "finish";
+      usage: { promptTokens: number; completionTokens: number };
+    }
   | { type: "error"; error: string };
 
 /**
