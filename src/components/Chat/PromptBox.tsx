@@ -31,39 +31,53 @@ export const PromptBox = React.memo(
     const readChatStream = useChatStream();
 
     const convertToChatMessages = useCallback((): ChatMessage[] => {
-      return messages
-        .filter((msg) => msg.is_complete === true && !msg.id.startsWith("temp-"))
-        .map((msg) => {
-          if (msg.role === "user") {
-            return { role: "user" as const, content: msg.content };
+      const chatMessages: ChatMessage[] = [];
+      
+      for (const msg of messages) {
+        // Skip incomplete or temp messages
+        if (msg.is_complete !== true || msg.id.startsWith("temp-")) {
+          continue;
+        }
+
+        if (msg.role === "user") {
+          chatMessages.push({ role: "user" as const, content: msg.content });
+        } else if (msg.role === "assistant") {
+          const assistantMsg: ChatMessage = {
+            role: "assistant",
+            content: msg.content,
+          };
+          
+          if (msg.tool_calls && msg.tool_calls.length > 0) {
+            assistantMsg.tool_calls = msg.tool_calls.map((tc) => ({
+              id: tc.id,
+              type: "function" as const,
+              function: {
+                name: tc.name,
+                arguments: tc.arguments,
+              },
+            }));
           }
-          if (msg.role === "assistant") {
-            const assistantMsg: ChatMessage = {
-              role: "assistant",
-              content: msg.content,
-            };
-            if (msg.tool_calls && msg.tool_calls.length > 0) {
-              assistantMsg.tool_calls = msg.tool_calls.map((tc) => ({
-                id: tc.id,
-                type: "function" as const,
-                function: {
-                  name: tc.name,
-                  arguments: tc.arguments,
-                },
-              }));
+          
+          chatMessages.push(assistantMsg);
+          
+          // Reconstruct tool messages from tool_calls that have results
+          if (msg.tool_calls && msg.tool_calls.length > 0) {
+            for (const toolCall of msg.tool_calls) {
+              if (toolCall.result) {
+                chatMessages.push({
+                  role: "tool" as const,
+                  content: toolCall.result,
+                  tool_call_id: toolCall.id,
+                  tool_name: toolCall.name,
+                });
+              }
             }
-            return assistantMsg;
           }
-          if (msg.role === "tool") {
-            return {
-              role: "tool" as const,
-              content: msg.content,
-              tool_call_id: msg.tool_call_id || msg.id,
-              tool_name: msg.tool_name || "unknown",
-            };
-          }
-          return { role: "user" as const, content: msg.content };
-        });
+        }
+        // Note: tool messages are reconstructed from assistant tool_calls above
+      }
+      
+      return chatMessages;
     }, [messages]);
 
     const createConversationIfNeeded = useCallback(async (): Promise<string | null> => {
@@ -232,36 +246,6 @@ export const PromptBox = React.memo(
       });
     }, [workspaceId, updateMessage]);
 
-    const addToolMessagesToStore = useCallback((
-      streamResult: StreamResult,
-      savedIds: Map<number, string>,
-      conversationId: string
-    ): void => {
-      const toolMessages = streamResult.messagesToSave.filter(m => m.role === "tool");
-
-      for (const toolMsg of toolMessages) {
-        const toolIndex = streamResult.messagesToSave.indexOf(toolMsg);
-        const savedToolId = savedIds.get(toolIndex);
-
-        if (savedToolId) {
-          addMessage({
-            id: savedToolId,
-            workspace_id: workspaceId,
-            conversation_id: conversationId,
-            role: "tool",
-            content: toolMsg.content,
-            reasoning: null,
-            is_complete: true,
-            prompt_tokens: null,
-            completion_tokens: null,
-            created_at: new Date(),
-            tool_call_id: toolMsg.tool_call_id || null,
-            tool_name: toolMsg.tool_name || null,
-          });
-        }
-      }
-    }, [workspaceId, addMessage]);
-
     const handleSubmit = useCallback(async () => {
       if (!input.trim() || isStreaming) return;
 
@@ -292,7 +276,6 @@ export const PromptBox = React.memo(
 
         updateUserMessageInStore(streamResult, savedIds, tempUserId, conversationId, prompt);
         updateAssistantMessagesInStore(streamResult, savedIds, conversationId);
-        addToolMessagesToStore(streamResult, savedIds, conversationId);
       } catch (error) {
         console.error(error);
         toast.error("Something went wrong");
@@ -308,7 +291,6 @@ export const PromptBox = React.memo(
       saveMessagesToDatabase,
       updateUserMessageInStore,
       updateAssistantMessagesInStore,
-      addToolMessagesToStore,
     ]);
 
     return (

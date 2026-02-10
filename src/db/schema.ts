@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -73,12 +74,54 @@ export const messagesTable = pgTable("messages", {
     }[]
   >(),
   // For streaming: track if message is complete
-  is_complete: boolean("isComplete").default(false),
+  is_complete: boolean("isComplete").default(true),
   // Token counts for cost tracking
   prompt_tokens: integer("promptTokens"),
   completion_tokens: integer("completionTokens"),
   created_at: timestamp("createdAt", { withTimezone: true }).defaultNow(),
 });
+
+export const insightCategoryEnum = pgEnum("insight_category", [
+  "metric",
+  "assumption",
+  "anomaly",
+  "user_goal",
+  "interpretation",
+  "other",
+]);
+
+//TODO: relations to this and also this deprecated msg fix and metadata maybe unnecessary
+export const agentInsightsTable = pgTable(
+  "agent_insights",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+
+    workspace_id: uuid("workspace_id").notNull(),
+    category: insightCategoryEnum("category").notNull(),
+    content: text("content").notNull(),
+    source: text("source"),
+    // semantic tags
+    tags: text("tags").array(),
+    // flexible structured metadata
+    // metadata: jsonb("metadata")
+    //   .$type<Record<string, any>>()
+    //   .default(sql`'{}'::jsonb`)
+    //   .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("idx_agent_insights_category").on(table.category),
+    index("idx_agent_insights_session").on(table.workspace_id),
+    index("idx_agent_insights_tags").on(table.tags),
+    // index("idx_agent_insights_metadata").on(table.metadata),
+  ],
+);
 
 export const usersRelations = relations(usersTable, ({ many }) => ({
   workspaces: many(workspacesTable),
@@ -93,6 +136,7 @@ export const workspacesRelations = relations(
     }),
     conversations: many(conversationsTable),
     messages: many(messagesTable),
+    agentInsights: many(agentInsightsTable),
   }),
 );
 
@@ -117,3 +161,13 @@ export const messagesRelations = relations(messagesTable, ({ one }) => ({
     references: [conversationsTable.id],
   }),
 }));
+
+export const agentInsightsRelations = relations(
+  agentInsightsTable,
+  ({ one }) => ({
+    workspace: one(workspacesTable, {
+      fields: [agentInsightsTable.workspace_id],
+      references: [workspacesTable.id],
+    }),
+  }),
+);

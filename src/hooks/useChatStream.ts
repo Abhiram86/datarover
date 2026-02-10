@@ -76,6 +76,7 @@ interface StepState {
   stepReasoning: string;
   stepHadToolCall: boolean;
   stepToolCalls: ToolCall[];
+  stepHadError: boolean;
 }
 
 interface StreamContext {
@@ -94,6 +95,7 @@ function initializeStepState(): StepState {
     stepReasoning: "",
     stepHadToolCall: false,
     stepToolCalls: [],
+    stepHadError: false,
   };
 }
 
@@ -240,6 +242,7 @@ function handleStreamEvent(
 
     case "error":
       console.error("Stream error:", event.error);
+      stepState.stepHadError = true;
       onStreamEvent(event);
       break;
 
@@ -260,7 +263,7 @@ function saveAssistantStepMessage(
     content: stepState.stepContent,
     reasoning: stepState.stepReasoning || null,
     tool_calls: [...stepState.stepToolCalls],
-    is_complete: false,
+    is_complete: !stepState.stepHadError,
     step_number: stepState.stepCount,
     is_final_response: false,
   });
@@ -364,6 +367,10 @@ function addToolResultToConversation(
   },
   context: StreamContext,
 ): void {
+  // Store the result in the toolCall for saving with the assistant message
+  toolCall.result = JSON.stringify(toolResult);
+
+  // Add tool message to conversation for current AI turn
   const toolMessage: ChatMessage = {
     role: "tool",
     content: JSON.stringify(toolResult),
@@ -371,14 +378,6 @@ function addToolResultToConversation(
     tool_name: toolCall.name,
   };
   context.messages.push(toolMessage);
-
-  context.messagesToSave.push({
-    role: "tool",
-    content: JSON.stringify(toolResult),
-    tool_call_id: toolCall.id,
-    tool_name: toolCall.name,
-    is_complete: true,
-  });
 }
 
 function extractFinalResults(context: StreamContext): {
@@ -433,6 +432,7 @@ export function useChatStream() {
           stepState.stepReasoning = "";
           stepState.stepHadToolCall = false;
           stepState.stepToolCalls = [];
+          stepState.stepHadError = false;
 
           const stream = await generalChatStream({
             data: { messages: context.messages },
