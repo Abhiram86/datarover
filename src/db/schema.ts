@@ -1,6 +1,5 @@
 import {
   boolean,
-  index,
   integer,
   jsonb,
   pgEnum,
@@ -70,6 +69,7 @@ export const messagesTable = pgTable("messages", {
       id: string;
       name: string;
       arguments: string;
+      description?: string; // Short 1-2 line description for UI display
       result?: string;
     }[]
   >(),
@@ -81,47 +81,37 @@ export const messagesTable = pgTable("messages", {
   created_at: timestamp("createdAt", { withTimezone: true }).defaultNow(),
 });
 
-export const insightCategoryEnum = pgEnum("insight_category", [
-  "metric",
-  "assumption",
-  "anomaly",
-  "user_goal",
-  "interpretation",
-  "other",
-]);
-
 //TODO: relations to this and also this deprecated msg fix and metadata maybe unnecessary
-export const agentInsightsTable = pgTable(
-  "agent_insights",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
+export const agentInsightsTable = pgTable("agent_insights", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspace_id: uuid("workspace_id").notNull(),
+  content: jsonb("content").$type<{
+    insights: {
+      important: {
+        id: number;
+        context: string;
+        source?: string;
+      }[];
+      general: {
+        id: number;
+        context: string;
+        source?: string;
+      }[];
+      user_goals: {
+        id: number;
+        context: string;
+        source?: string;
+      }[];
+    };
+  }>(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 
-    workspace_id: uuid("workspace_id").notNull(),
-    category: insightCategoryEnum("category").notNull(),
-    content: text("content").notNull(),
-    source: text("source"),
-    // semantic tags
-    tags: text("tags").array(),
-    // flexible structured metadata
-    // metadata: jsonb("metadata")
-    //   .$type<Record<string, any>>()
-    //   .default(sql`'{}'::jsonb`)
-    //   .notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    index("idx_agent_insights_category").on(table.category),
-    index("idx_agent_insights_session").on(table.workspace_id),
-    index("idx_agent_insights_tags").on(table.tags),
-    // index("idx_agent_insights_metadata").on(table.metadata),
-  ],
-);
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const usersRelations = relations(usersTable, ({ many }) => ({
   workspaces: many(workspacesTable),
@@ -136,7 +126,7 @@ export const workspacesRelations = relations(
     }),
     conversations: many(conversationsTable),
     messages: many(messagesTable),
-    agentInsights: many(agentInsightsTable),
+    agentInsights: one(agentInsightsTable),
   }),
 );
 

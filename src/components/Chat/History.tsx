@@ -301,7 +301,7 @@ const ToolCallDropdown = memo(
   ({
     tool,
   }: {
-    tool: { id: string; name: string; arguments: string; result?: string };
+    tool: { id: string; name: string; arguments: string; description?: string; result?: string };
   }) => {
     const [isOpen, setIsOpen] = useState(false);
     const parsedArgs = JSON.parse(tool.arguments);
@@ -327,6 +327,16 @@ const ToolCallDropdown = memo(
           }`}
         >
           <div className="pl-3 py-2 space-y-2">
+            {tool.description && (
+              <div>
+                <span className="text-[9px] font-bold text-neutral-strong/20 uppercase">
+                  Description
+                </span>
+                <p className="text-[10px] text-neutral-strong/70 mt-1 italic">
+                  {tool.description}
+                </p>
+              </div>
+            )}
             {parsedArgs && (
               <div>
                 <span className="text-[9px] font-bold text-neutral-strong/20 uppercase">

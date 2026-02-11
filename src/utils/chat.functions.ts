@@ -24,6 +24,12 @@ const tools: ToolSet = {
       "Execute Python code in a browser-based sandbox. Use for data analysis and transformations.",
     inputSchema: z.object({
       code: z.string().describe("Python code to execute"),
+      description: z
+        .string()
+        .optional()
+        .describe(
+          "Brief explanation of what the code does. Recommended for operations that modify data or create new variables. Optional for read-only operations (analysis, visualization).",
+        ),
     }),
     execute: async () => ({
       ok: true,
@@ -39,6 +45,12 @@ const tools: ToolSet = {
         .string()
         .describe(
           "DuckDB query to execute. Can include CREATE TABLE, INSERT, SELECT, and any valid DuckDB syntax.",
+        ),
+      description: z
+        .string()
+        .optional()
+        .describe(
+          "Brief explanation of what the query does. Recommended for mutations (INSERT, UPDATE, DELETE, CREATE, DROP, ALTER) to inform the user and provide context. Optional for read-only queries (SELECT).",
         ),
     }),
     execute: async () => ({
@@ -126,6 +138,67 @@ const tools: ToolSet = {
       }
     },
   }),
+
+  read_insights: tool({
+    description: `Read insights from workspace memory. Use this to recall previous findings, user goals, or important context.`,
+    inputSchema: z.object({
+      type: z
+        .enum(["important", "general", "user_goals"])
+        .optional()
+        .describe("Type of insights to read. Omit to get all types."),
+      limit: z
+        .number()
+        .optional()
+        .default(10)
+        .describe("Maximum number of insights to return (default: 10)"),
+      id: z
+        .number()
+        .optional()
+        .describe("Specific insight ID to retrieve"),
+    }),
+    execute: async () => ({
+      ok: true,
+      message: "Tool execution handled client-side",
+    }),
+  }),
+
+  write_insight: tool({
+    description: `Write an insight to workspace memory. Use this to preserve findings across conversations.`,
+    inputSchema: z.object({
+      type: z
+        .enum(["important", "general", "user_goals"])
+        .describe("REQUIRED. The insight category. Must be exactly: 'important', 'general', or 'user_goals'. Use 'type' NOT 'category'."),
+      context: z
+        .string()
+        .describe("REQUIRED. The insight content/text to save. Use 'context' NOT 'content'. Be concise but specific."),
+      source: z
+        .string()
+        .optional()
+        .describe("Source of the insight (e.g., 'correlation analysis', 'user request')"),
+      id: z
+        .number()
+        .optional()
+        .describe("Existing insight ID to update. Omit to create new."),
+    }),
+    execute: async () => ({
+      ok: true,
+      message: "Tool execution handled client-side",
+    }),
+  }),
+
+  delete_insight: tool({
+    description: `Delete an insight from workspace memory. Use this when an insight is incorrect, outdated, or no longer relevant.`,
+    inputSchema: z.object({
+      type: z
+        .enum(["important", "general", "user_goals"])
+        .describe("Type/category of the insight"),
+      id: z.number().describe("ID of the insight to delete"),
+    }),
+    execute: async () => ({
+      ok: true,
+      message: "Tool execution handled client-side",
+    }),
+  }),
 };
 
 // Define message type for the API
@@ -138,6 +211,7 @@ interface ChatMessage {
     function: {
       name: string;
       arguments: string;
+      description?: string; // Short 1-2 line description for UI display
     };
   }>;
   // AI SDK internals - not displayed in UI but required for tool result linking
@@ -458,6 +532,7 @@ const toolCallSchema = z.object({
   id: z.string(),
   name: z.string(),
   arguments: z.string(),
+  description: z.string().optional(),
   result: z.string().optional(),
 });
 

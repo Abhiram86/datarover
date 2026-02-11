@@ -4,6 +4,13 @@ import { useSandboxStore } from "@/store/sandbox";
 import { useConversationStore } from "@/store/conversation";
 import type { ToolCall } from "@/types";
 import { useDuckDBStore } from "@/store/duckdb";
+import {
+  readInsightsTool,
+  writeInsightTool,
+  deleteInsightTool,
+} from "@/tools/insights";
+import { isMutationQuery } from "@/tools/duckb";
+import { showMutationConfirmation } from "@/components/MutationConfirmation";
 
 // Message type for the chat API
 export interface ChatMessage {
@@ -15,6 +22,7 @@ export interface ChatMessage {
     function: {
       name: string;
       arguments: string;
+      description?: string; // Short 1-2 line description for UI display
     };
   }>;
   // AI SDK internals - not displayed in UI but required for tool result linking
@@ -63,6 +71,7 @@ export interface StreamEvent {
   id?: string;
   name?: string;
   arguments?: string;
+  description?: string; // Short 1-2 line description for UI display
   result?: unknown;
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -210,6 +219,7 @@ function handleStreamEvent(
           id: event.id,
           name: event.name,
           arguments: event.arguments,
+          description: event.description,
         };
         stepState.stepToolCalls.push(toolCall);
         context.allToolCalls.push(toolCall);
@@ -310,6 +320,7 @@ async function executeToolCall(
   runDuckDB: (
     query: string,
   ) => Promise<{ ok: boolean; result?: unknown; error?: unknown }>,
+  skipConfirmation: boolean = false,
 ): Promise<{
   ok: boolean;
   result?: unknown;
@@ -337,6 +348,29 @@ async function executeToolCall(
   if (toolCall.name === "run_duckdb") {
     try {
       const args = JSON.parse(toolCall.arguments);
+      
+      // Check if this is a mutation query
+      const isMutation = isMutationQuery(args.query);
+      
+      if (isMutation && !skipConfirmation) {
+        // Show confirmation toast for mutations
+        const confirmed = await showMutationConfirmation({
+          toolName: "run_duckdb",
+          description: args.description,
+          query: args.query,
+        });
+        
+        if (!confirmed) {
+          // User rejected the mutation
+          const toolResult = {
+            ok: false,
+            error: "user aborted request for manipulation",
+          };
+          toolCall.result = JSON.stringify(toolResult);
+          return toolResult;
+        }
+      }
+      
       const toolResult = await runDuckDB(args.query);
       toolCall.result = JSON.stringify(toolResult);
       return toolResult;
@@ -347,7 +381,62 @@ async function executeToolCall(
           execError instanceof Error ? execError.message : "Execution failed",
       };
       toolCall.result = JSON.stringify(toolResult);
-      console.error(`[Chat Stream] run_python error:`, toolResult.error);
+      console.error(`[Chat Stream] run_duckdb error:`, toolResult.error);
+      return toolResult;
+    }
+  }
+
+  // Insights tools - client-side execution
+  if (toolCall.name === "read_insights") {
+    try {
+      const args = JSON.parse(toolCall.arguments);
+      const toolResult = await readInsightsTool(args);
+      toolCall.result = JSON.stringify(toolResult);
+      return toolResult;
+    } catch (execError) {
+      const toolResult = {
+        ok: false,
+        error:
+          execError instanceof Error ? execError.message : "Execution failed",
+      };
+      toolCall.result = JSON.stringify(toolResult);
+      console.error(`[Chat Stream] read_insights error:`, toolResult.error);
+      return toolResult;
+    }
+  }
+
+  if (toolCall.name === "write_insight") {
+    try {
+      const args = JSON.parse(toolCall.arguments);
+      const toolResult = await writeInsightTool(args);
+      toolCall.result = JSON.stringify(toolResult);
+      return toolResult;
+    } catch (execError) {
+      const toolResult = {
+        ok: false,
+        error:
+          execError instanceof Error ? execError.message : "Execution failed",
+      };
+      toolCall.result = JSON.stringify(toolResult);
+      console.error(`[Chat Stream] write_insight error:`, toolResult.error);
+      return toolResult;
+    }
+  }
+
+  if (toolCall.name === "delete_insight") {
+    try {
+      const args = JSON.parse(toolCall.arguments);
+      const toolResult = await deleteInsightTool(args);
+      toolCall.result = JSON.stringify(toolResult);
+      return toolResult;
+    } catch (execError) {
+      const toolResult = {
+        ok: false,
+        error:
+          execError instanceof Error ? execError.message : "Execution failed",
+      };
+      toolCall.result = JSON.stringify(toolResult);
+      console.error(`[Chat Stream] delete_insight error:`, toolResult.error);
       return toolResult;
     }
   }
@@ -413,7 +502,7 @@ export function useChatStream() {
       initialMessages: ChatMessage[],
       onStreamEvent: (event: StreamEvent) => void,
     ): Promise<StreamResult> => {
-      const MAX_STEPS = 15;
+      const MAX_STEPS = 50;
       const context = createInitialContext(initialMessages);
       const stepState = initializeStepState();
 

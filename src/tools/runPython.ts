@@ -14,6 +14,12 @@ export const runPythonTool = tool({
       .describe(
         "The Python code to execute. Can include imports, function definitions, and any valid Python code."
       ),
+    description: z
+      .string()
+      .optional()
+      .describe(
+        "Brief explanation of what the code does. Recommended for operations that modify data or create new variables. Optional for read-only operations (analysis, visualization).",
+      ),
   }),
   execute: async (): Promise<ToolResult> => {
     // Note: Actual execution happens client-side via useChatStream hook

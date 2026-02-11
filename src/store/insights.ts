@@ -22,6 +22,13 @@ interface InsightsStoreState {
   loadInsights: (workspaceId: string) => void;
   saveInsights: () => void;
   setWorkspaceId: (workspaceId: string) => void;
+  setInsightsFromDB: (workspaceId: string, data: {
+    insights: {
+      important: Array<{ id: number; context: string; source?: string }>;
+      general: Array<{ id: number; context: string; source?: string }>;
+      user_goals: Array<{ id: number; context: string; source?: string }>;
+    };
+  }) => void;
 
   // CRUD operations
   getInsights: (
@@ -57,6 +64,9 @@ const defaultInsights: InsightsData = {
   general: [],
   user_goals: [],
 };
+
+// Maximum number of insights per type (25 as requested)
+const MAX_INSIGHTS_PER_TYPE = 25;
 
 export const useInsightsStore = create<InsightsStoreState>((set, get) => ({
   workspaceId: null,
@@ -109,6 +119,41 @@ export const useInsightsStore = create<InsightsStoreState>((set, get) => ({
     set({ workspaceId });
   },
 
+  setInsightsFromDB: (workspaceId: string, data: {
+    insights: {
+      important: Array<{ id: number; context: string; source?: string }>;
+      general: Array<{ id: number; context: string; source?: string }>;
+      user_goals: Array<{ id: number; context: string; source?: string }>;
+    };
+  }) => {
+    const loadedInsights: InsightsData = {
+      important: data.insights.important.map(i => ({
+        id: i.id,
+        type: "important",
+        context: i.context,
+        ...(i.source && { source: i.source }),
+      })),
+      general: data.insights.general.map(i => ({
+        id: i.id,
+        type: "general",
+        context: i.context,
+        ...(i.source && { source: i.source }),
+      })),
+      user_goals: data.insights.user_goals.map(i => ({
+        id: i.id,
+        type: "user_goals",
+        context: i.context,
+        ...(i.source && { source: i.source }),
+      })),
+    };
+    
+    set({
+      workspaceId,
+      insights: loadedInsights,
+      isLoaded: true,
+    });
+  },
+
   getInsights: (type, limit, id) => {
     const { insights } = get();
 
@@ -159,6 +204,14 @@ export const useInsightsStore = create<InsightsStoreState>((set, get) => ({
 
   addInsight: (type, context, source) => {
     const { insights, saveInsights } = get();
+
+    // Check if we've hit the limit
+    if (insights[type].length >= MAX_INSIGHTS_PER_TYPE) {
+      console.warn(
+        `[Insights] Cannot add more ${type} insights. Maximum (${MAX_INSIGHTS_PER_TYPE}) reached.`,
+      );
+      return -1;
+    }
 
     // Generate new ID (max + 1)
     const maxId = insights[type].reduce((max, i) => Math.max(max, i.id), 0);

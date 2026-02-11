@@ -3,12 +3,22 @@ import type { ToolSet } from "ai";
 // Import tool definitions
 import { webSearchTool } from "./webSearch";
 import { webFetchTool } from "./webFetch";
+import {
+  readInsightsTool,
+  writeInsightTool,
+  deleteInsightTool,
+} from "./insightsTool";
 
 // Re-export individual tool definitions
 export { runPythonTool } from "./runPython";
 export { runDuckDBTool } from "./duckb";
 export { webSearchTool } from "./webSearch";
 export { webFetchTool } from "./webFetch";
+export {
+  readInsightsTool,
+  writeInsightTool,
+  deleteInsightTool,
+} from "./insightsTool";
 
 /**
  * Tool execution result shape
@@ -35,6 +45,7 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
+  description?: string; // Short 1-2 line description for UI display
   result?: string;
 }
 
@@ -54,11 +65,14 @@ export type StreamEvent =
 
 /**
  * ToolSet for AI SDK
- * Note: run_python tool is client-side only and handled separately
+ * Note: run_python, run_duckdb, and insights tools are client-side only and handled separately
  */
 export const tools: ToolSet = {
   search_web: webSearchTool,
   fetch_url: webFetchTool,
+  read_insights: readInsightsTool,
+  write_insight: writeInsightTool,
+  delete_insight: deleteInsightTool,
 };
 
 /**

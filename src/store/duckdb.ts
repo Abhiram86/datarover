@@ -29,6 +29,7 @@ interface DuckDBState {
   query: (sql: string) => Promise<{ ok: boolean; result: any[]; error?: any }>;
   getPreviewRows: (limit?: number) => Promise<any[]>;
   close: () => Promise<void>;
+  reset: () => void;
 }
 
 const initialState = {
@@ -152,5 +153,9 @@ export const useDuckDBStore = create<DuckDBState>((set, get) => ({
     await conn?.close();
     await db?.terminate();
     set({ db: null, conn: null, isInitialized: false });
+  },
+
+  reset: () => {
+    set({ ...initialState });
   },
 }));

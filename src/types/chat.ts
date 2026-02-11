@@ -12,6 +12,7 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
+  description?: string; // Short 1-2 line description for UI display
   result?: string;
 }
 
