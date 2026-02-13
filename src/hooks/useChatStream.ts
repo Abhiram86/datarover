@@ -372,6 +372,11 @@ async function executeToolCall(
       }
       
       const toolResult = await runDuckDB(args.query);
+
+      if (toolResult.ok && isMutation) {
+        await useDuckDBStore.getState().triggerMutationCallback();
+      }
+
       toolCall.result = JSON.stringify(toolResult);
       return toolResult;
     } catch (execError) {

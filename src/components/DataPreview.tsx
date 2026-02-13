@@ -1,7 +1,12 @@
-import { AllCommunityModule, ColDef, ModuleRegistry } from "ag-grid-community";
+import {
+  AllCommunityModule,
+  ColDef,
+  ModuleRegistry,
+  GridApi,
+} from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { themeAlpine } from "ag-grid-community";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useDuckDBStore } from "@/store/duckdb";
 import { DataPreviewSkeleton } from "@/components/skeletons/DataPreviewSkeleton";
@@ -69,15 +74,19 @@ export default function DataPreview({
   const [rows, setRows] = useState<any[]>([]);
   const [buffer, setBuffer] = useState<Uint8Array | null>(null);
   const [isLoadingCache, setIsLoadingCache] = useState(true);
+  const gridApiRef = useRef<GridApi | null>(null);
 
   const {
     initialize,
+    close,
     loadParquet,
     getPreviewRows,
     columnNames,
     rowCount,
     isLoading: dbLoading,
     isInitialized,
+    setMutationCallback,
+    refreshSchema,
   } = useDuckDBStore();
 
   useEffect(() => {
@@ -94,6 +103,9 @@ export default function DataPreview({
           setBuffer(cached);
           const previewRows = await getPreviewRows(2000);
           setRows(previewRows);
+          if (gridApiRef.current) {
+            gridApiRef.current.setGridOption("rowData", previewRows);
+          }
         }
       } catch (e) {
         console.error("Failed to load cached data:", e);
@@ -107,6 +119,9 @@ export default function DataPreview({
 
   useEffect(() => {
     initialize();
+    return () => {
+      close();
+    };
   }, [initialize]);
 
   const [workspaceQuery, fileQuery] = useQueries({
@@ -152,8 +167,53 @@ export default function DataPreview({
       setBuffer(fileQuery.data);
       const previewRows = await getPreviewRows(2000);
       setRows(previewRows);
+      if (gridApiRef.current) {
+        gridApiRef.current.setGridOption("rowData", previewRows);
+      }
     })();
   }, [fileQuery.data, buffer, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized || workspaceId === "new") return;
+
+    const refreshPreview = async () => {
+      try {
+        await refreshSchema();
+
+        const previewRows = await getPreviewRows(2000);
+        const updatedColumnNames = useDuckDBStore.getState().columnNames;
+
+        setRows(previewRows);
+        if (gridApiRef.current) {
+          gridApiRef.current.setGridOption("rowData", previewRows);
+          gridApiRef.current.setGridOption(
+            "columnDefs",
+            updatedColumnNames.map((key) => ({
+              field: key,
+              headerName: key.toUpperCase(),
+              filter: true,
+              sortable: true,
+              resizable: true,
+            })),
+          );
+        }
+      } catch (e) {
+        console.error("Failed to refresh preview:", e);
+      }
+    };
+
+    setMutationCallback(refreshPreview);
+
+    return () => {
+      setMutationCallback(null);
+    };
+  }, [
+    isInitialized,
+    workspaceId,
+    getPreviewRows,
+    setMutationCallback,
+    refreshSchema,
+  ]);
 
   const columnDefs = useMemo<ColDef[]>(() => {
     if (columnNames.length === 0) return [];
@@ -240,6 +300,9 @@ export default function DataPreview({
                 suppressCellFocus={true}
                 pagination={rows.length > 1000}
                 paginationPageSize={100}
+                onGridReady={(params) => {
+                  gridApiRef.current = params.api;
+                }}
               />
             </div>
           </div>

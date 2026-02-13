@@ -17,6 +17,8 @@ function normalizeRow(row: Record<string, any>) {
 type AsyncDuckDB = any;
 type AsyncDuckDBConnection = any;
 
+type MutationCallback = () => void | Promise<void>;
+
 interface DuckDBState {
   db: AsyncDuckDB | null;
   conn: AsyncDuckDBConnection | null;
@@ -24,10 +26,14 @@ interface DuckDBState {
   isLoading: boolean;
   rowCount: number;
   columnNames: string[];
+  mutationCallback: MutationCallback | null;
   initialize: () => Promise<void>;
   loadParquet: (buffer: Uint8Array, tableName?: string) => Promise<void>;
   query: (sql: string) => Promise<{ ok: boolean; result: any[]; error?: any }>;
+  triggerMutationCallback: () => Promise<void>;
+  setMutationCallback: (callback: MutationCallback | null) => void;
   getPreviewRows: (limit?: number) => Promise<any[]>;
+  refreshSchema: (tableName?: string) => Promise<void>;
   close: () => Promise<void>;
   reset: () => void;
 }
@@ -39,6 +45,7 @@ const initialState = {
   isLoading: false,
   rowCount: 0,
   columnNames: [],
+  mutationCallback: null,
 };
 
 export const useDuckDBStore = create<DuckDBState>((set, get) => ({
@@ -86,7 +93,6 @@ export const useDuckDBStore = create<DuckDBState>((set, get) => ({
       const conn = await db.connect();
 
       set({ db, conn, isInitialized: true, isLoading: false });
-      console.log("DuckDB initialized (Vite local worker)");
     } catch (err) {
       set({ isLoading: false });
       throw err;
@@ -111,7 +117,6 @@ export const useDuckDBStore = create<DuckDBState>((set, get) => ({
     const columns = schemaResult.toArray().map((row: any) => row.column_name);
 
     set({ rowCount: count, columnNames: columns });
-    console.log(`Loaded ${count} rows, ${columns.length} columns`);
   },
 
   query: async (sql: string) => {
@@ -133,6 +138,34 @@ export const useDuckDBStore = create<DuckDBState>((set, get) => ({
         error: error instanceof Error ? error.message : "Query failed",
       };
     }
+  },
+
+  triggerMutationCallback: async () => {
+    const { mutationCallback } = get();
+    if (mutationCallback) {
+      try {
+        await mutationCallback();
+      } catch (error) {
+        console.error("Mutation callback error:", error);
+      }
+    }
+  },
+
+  setMutationCallback: (callback: MutationCallback | null) => {
+    set({ mutationCallback: callback });
+  },
+
+  refreshSchema: async (tableName = "data") => {
+    const { conn } = get();
+    if (!conn) throw new Error("DuckDB not initialized");
+
+    const countResult = await conn.query(`SELECT COUNT(*) as count FROM ${tableName}`);
+    const count = countResult.toArray()[0].count;
+
+    const schemaResult = await conn.query(`DESCRIBE ${tableName}`);
+    const columns = schemaResult.toArray().map((row: any) => row.column_name);
+
+    set({ rowCount: count, columnNames: columns });
   },
 
   getPreviewRows: async (limit = 2000) => {
