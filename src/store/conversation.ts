@@ -21,6 +21,7 @@ interface ConversationStoreState {
     tempId?: string,
   ) => void;
   updateMessage: (tempId: string, newMessage: Message) => void;
+  updateMessageContent: (placeholder: string, publicUrl: string) => void;
   removeMessage: (id: string) => void;
   setMessages: (messages: Message[]) => void;
   reset: () => void;
@@ -107,6 +108,19 @@ export const useConversationStore = create<ConversationStoreState>((set) => ({
       messages: state.messages.map((msg) =>
         msg.id === tempId ? { ...msg, ...newMessage } : msg,
       ),
+    }));
+  },
+  updateMessageContent: (placeholder: string, publicUrl: string) => {
+    set((state) => ({
+      messages: state.messages.map((msg) => {
+        if (msg.content.includes(placeholder)) {
+          return {
+            ...msg,
+            content: msg.content.replace(placeholder, publicUrl),
+          };
+        }
+        return msg;
+      }),
     }));
   },
 

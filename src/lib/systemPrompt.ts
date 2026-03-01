@@ -79,23 +79,44 @@ Use for:
 
 Inside Python you have:
 
-- async function: sql(query)
+- async function: sql(query) - returns data directly (already parsed)
 - numpy as np
 - pandas as pd (use cautiously and only for small aggregated results)
+- matplotlib.pyplot as plt (for visualization)
 - Standard Python libraries
 
 Important:
 
 - sql(query) must be awaited.
-- await sql(query) returns a STRINGIFIED JSON result.
-- You must parse it explicitly:
-
-    import json
-    raw = await sql("SELECT ...")
-    rows = json.loads(raw)
+- await sql(query) returns data DIRECTLY as a list of dictionaries - NO json.loads() needed
+  Example: result = await sql("SELECT ...") gives you [{'age': 67, ...}, {'age': 61, ...}] directly
+- Convert to pandas DataFrame with df = pd.DataFrame(data) if you need DataFrame operations like filtering and indexing
+- Direct indexing like data[data['stroke'] == 1] will FAIL - you must use pandas DataFrame
 
 DuckDB remains the source of truth.
 All data retrieved inside Python must come from await sql(...).
+
+### Visualization
+- You must actually CREATE plots in your Python code - just querying data is not enough!
+- Use plt.figure() or plt.subplots() to create a figure, then add plots with plt.bar(), plt.plot(), plt.hist(), etc.
+- Example: First query data, then create the visualization
+- DO NOT use plt.savefig() - it will fail with an error
+- DO NOT use plt.tight_layout() - it causes execution to hang
+- DO NOT use plt.show() - it causes execution to hang
+- Generated plots are displayed to the user automatically
+- If there is a \`\`\`Timeout Error\`\`\` then we can say that the image is not 
+
+**Examples: (this is because we are collecting the image from buffer, and this is running in a web browser as sandbox, 
+if u do plt.show() or plt.tight_layout() it will cause the execution to hang)**
+# ❌ WRONG (will hang):
+plt.plot(x, y)
+plt.show()  # NEVER USE THIS
+plt.tight_layout()  # NEVER USE THIS
+
+# ✅ CORRECT:
+plt.plot(x, y)
+# Plot displays automatically, NO plt.show() needed
+
 
 ---
 
@@ -180,8 +201,7 @@ If the task requires:
 Use a single run_python call.
 
 Inside Python:
-- Retrieve data via await sql(...)
-- Parse with json.loads
+- Retrieve data via await sql(...) - data is returned directly (no json.loads needed)
 - Operate only on small, aggregated results
 
 Design queries carefully to maximize insight per call.
@@ -242,6 +262,7 @@ Analysis is structured exploration, not mechanical execution.
 
 At the start of every conversation:
 → Call read_insights.
+→ See the available TABLES inside DuckDB.
 
 Always store:
 - Explicit user objectives (category: user_goals)

@@ -7,7 +7,7 @@ import {
   RotateCcw,
   Eraser,
 } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { PanelGroup } from "./Panels/PanelGroup";
 import { Panel } from "./Panels/Panel";
 import { useSandboxStore } from "@/store/sandbox";
@@ -164,7 +164,7 @@ export const CodeEditor = () => {
                 className="w-10 py-4 text-right pr-3 text-primary select-none border-r border-white/5 bg-[#020617] overflow-hidden"
                 style={{ lineHeight: "1.5rem" }} // Exactly 24px to match text-sm leading-6
               >
-                {code.split("\n").map((_, i) => (
+                {Array.from({ length: useMemo(() => code.split("\n").length, [code]) }, (_, i) => (
                   <div key={i} className="text-[10px] h-6">
                     {i + 1}
                   </div>

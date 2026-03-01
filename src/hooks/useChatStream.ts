@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { generalChatStream } from "@/utils/chat.functions";
 import { useSandboxStore } from "@/store/sandbox";
 import { useConversationStore } from "@/store/conversation";
-import type { ToolCall } from "@/types";
+import type { ToolCall, ToolResult } from "@/types";
 import { useDuckDBStore } from "@/store/duckdb";
 import {
   readInsightsTool,
@@ -11,6 +11,50 @@ import {
 } from "@/tools/insights";
 import { isMutationQuery } from "@/tools/duckb";
 import { showMutationConfirmation } from "@/components/MutationConfirmation";
+import { useSandboxRetry } from "./useSandboxRetry";
+
+interface InternalToolResult {
+  ok: boolean;
+  result?: unknown;
+  images?: { name: string; url: string }[] | null;
+  error?: unknown;
+  consoleOutput?: string[];
+}
+
+function toTypedResult(internal: {
+  ok?: boolean;
+  result?: unknown;
+  message?: unknown;
+  error?: unknown;
+  images?: unknown;
+  consoleOutput?: string[];
+}): ToolResult {
+  if (internal.error) {
+    return { type: "other", error: String(internal.error) };
+  }
+  const imgs = internal.images as { name: string; url: string }[] | undefined;
+  if (imgs && imgs.length > 0) {
+    return {
+      type: "image",
+      images: imgs,
+      consoleOutput: internal.consoleOutput,
+    };
+  }
+  const value = internal.result ?? internal.message ?? "";
+  let valueString: string;
+  if (typeof value === "string") {
+    valueString = value;
+  } else if (typeof value === "object" && value !== null) {
+    valueString = JSON.stringify(value, null, 2);
+  } else {
+    valueString = String(value);
+  }
+  return {
+    type: "text",
+    value: valueString,
+    consoleOutput: internal.consoleOutput,
+  };
+}
 
 // Message type for the chat API
 export interface ChatMessage {
@@ -237,7 +281,7 @@ function handleStreamEvent(
           stepState.stepToolCalls.find((tc) => tc.id === event.id) ||
           context.allToolCalls.find((tc) => tc.id === event.id);
         if (toolCall) {
-          toolCall.result = JSON.stringify(event.result);
+          toolCall.result = toTypedResult(event.result as InternalToolResult);
         }
       }
       onStreamEvent(event);
@@ -272,7 +316,7 @@ function saveAssistantStepMessage(
     role: "assistant",
     content: stepState.stepContent,
     reasoning: stepState.stepReasoning || null,
-    tool_calls: [...stepState.stepToolCalls],
+    tool_calls: stepState.stepToolCalls,
     is_complete: !stepState.stepHadError,
     step_number: stepState.stepCount,
     is_final_response: false,
@@ -311,12 +355,18 @@ function addAssistantMessageToConversation(
 
 async function executeToolCall(
   toolCall: ToolCall,
-  runPython: (code: string) => Promise<{
+  runPythonWithRetry: (
+    code: string,
+    waitForSandbox: () => Promise<void>,
+    timeout?: number,
+  ) => Promise<{
     ok: boolean;
     result?: unknown;
+    images?: string[];
     error?: unknown;
     consoleOutput?: string[];
   }>,
+  waitForSandbox: () => Promise<void>,
   runDuckDB: (
     query: string,
   ) => Promise<{ ok: boolean; result?: unknown; error?: unknown }>,
@@ -324,22 +374,73 @@ async function executeToolCall(
 ): Promise<{
   ok: boolean;
   result?: unknown;
+  images?: { name: string; url: string }[] | null;
   error?: unknown;
   consoleOutput?: string[];
 }> {
   if (toolCall.name === "run_python") {
     try {
       const args = JSON.parse(toolCall.arguments);
-      const toolResult = await runPython(args.code);
-      toolCall.result = JSON.stringify(toolResult);
-      return toolResult;
+
+      // Use retry logic - waits for sandbox with countdown toast
+      const toolResult = await runPythonWithRetry(args.code, waitForSandbox);
+
+      // Check for sandbox errors that should stop the stream
+      if (
+        toolResult.error === "SANDBOX_DISMISSED" ||
+        toolResult.error === "SANDBOX_MAX_RETRIES"
+      ) {
+        console.error("[Chat Stream] Sandbox unavailable:", toolResult.error);
+        // Stop the stream by throwing an error - don't waste agent tokens
+        throw new Error(`SANDBOX_UNAVAILABLE: ${toolResult.error}`);
+      }
+
+      // Handle images - just use base64 URLs directly
+      let formattedImages = null;
+      try {
+        if (
+          toolResult.images &&
+          Array.isArray(toolResult.images) &&
+          toolResult.images.length > 0
+        ) {
+          formattedImages = toolResult.images.map((base64, idx) => {
+            if (typeof base64 !== "string") {
+              console.error(
+                "[Chat Stream] Invalid base64 type:",
+                typeof base64,
+              );
+              return { name: `plot_${idx + 1}.png`, url: "" };
+            }
+            return {
+              name: `plot_${idx + 1}.png`,
+              url: base64.startsWith("data:")
+                ? base64
+                : `data:image/png;base64,${base64}`,
+            };
+          });
+        }
+      } catch (imgErr) {
+        console.error("[Chat Stream] Error formatting images:", imgErr);
+      }
+
+      const enhancedResult = {
+        ...toolResult,
+        images: formattedImages,
+      };
+
+      toolCall.result = toTypedResult(enhancedResult);
+
+      return enhancedResult;
     } catch (execError) {
       const toolResult = {
         ok: false,
         error:
           execError instanceof Error ? execError.message : "Execution failed",
+        images: null,
+        result: undefined,
+        consoleOutput: undefined,
       };
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] run_python error:`, toolResult.error);
       return toolResult;
     }
@@ -348,10 +449,10 @@ async function executeToolCall(
   if (toolCall.name === "run_duckdb") {
     try {
       const args = JSON.parse(toolCall.arguments);
-      
+
       // Check if this is a mutation query
       const isMutation = isMutationQuery(args.query);
-      
+
       if (isMutation && !skipConfirmation) {
         // Show confirmation toast for mutations
         const confirmed = await showMutationConfirmation({
@@ -359,25 +460,25 @@ async function executeToolCall(
           description: args.description,
           query: args.query,
         });
-        
+
         if (!confirmed) {
           // User rejected the mutation
           const toolResult = {
             ok: false,
             error: "user aborted request for manipulation",
           };
-          toolCall.result = JSON.stringify(toolResult);
+          toolCall.result = toTypedResult(toolResult);
           return toolResult;
         }
       }
-      
+
       const toolResult = await runDuckDB(args.query);
 
       if (toolResult.ok && isMutation) {
         await useDuckDBStore.getState().triggerMutationCallback();
       }
 
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       return toolResult;
     } catch (execError) {
       const toolResult = {
@@ -385,7 +486,7 @@ async function executeToolCall(
         error:
           execError instanceof Error ? execError.message : "Execution failed",
       };
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] run_duckdb error:`, toolResult.error);
       return toolResult;
     }
@@ -396,7 +497,7 @@ async function executeToolCall(
     try {
       const args = JSON.parse(toolCall.arguments);
       const toolResult = await readInsightsTool(args);
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       return toolResult;
     } catch (execError) {
       const toolResult = {
@@ -404,7 +505,7 @@ async function executeToolCall(
         error:
           execError instanceof Error ? execError.message : "Execution failed",
       };
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] read_insights error:`, toolResult.error);
       return toolResult;
     }
@@ -414,7 +515,7 @@ async function executeToolCall(
     try {
       const args = JSON.parse(toolCall.arguments);
       const toolResult = await writeInsightTool(args);
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       return toolResult;
     } catch (execError) {
       const toolResult = {
@@ -422,7 +523,7 @@ async function executeToolCall(
         error:
           execError instanceof Error ? execError.message : "Execution failed",
       };
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] write_insight error:`, toolResult.error);
       return toolResult;
     }
@@ -432,7 +533,7 @@ async function executeToolCall(
     try {
       const args = JSON.parse(toolCall.arguments);
       const toolResult = await deleteInsightTool(args);
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       return toolResult;
     } catch (execError) {
       const toolResult = {
@@ -440,14 +541,20 @@ async function executeToolCall(
         error:
           execError instanceof Error ? execError.message : "Execution failed",
       };
-      toolCall.result = JSON.stringify(toolResult);
+      toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] delete_insight error:`, toolResult.error);
       return toolResult;
     }
   }
 
   return toolCall.result
-    ? JSON.parse(toolCall.result)
+    ? {
+        ok: true,
+        result: toolCall.result.type === 'text' ? toolCall.result.value : undefined,
+        error: toolCall.result.type === 'other' ? toolCall.result.error : undefined,
+        images: toolCall.result.type === 'image' ? toolCall.result.images : undefined,
+        consoleOutput: toolCall.result.consoleOutput,
+      }
     : { ok: true, result: "Executed on server" };
 }
 
@@ -456,18 +563,31 @@ function addToolResultToConversation(
   toolResult: {
     ok: boolean;
     result?: unknown;
+    images?: { name: string; url: string }[] | null;
     error?: unknown;
     consoleOutput?: string[];
   },
   context: StreamContext,
 ): void {
   // Store the result in the toolCall for saving with the assistant message
-  toolCall.result = JSON.stringify(toolResult);
+  toolCall.result = toTypedResult(toolResult);
+
+  // For Model Context: minimal text only (prevent base64 pollution)
+  const modelResult = {
+    ok: toolResult.ok,
+    result: toolResult.result,
+    error: toolResult.error,
+    consoleOutput: toolResult.consoleOutput,
+    visualization:
+      toolResult.images && toolResult.images.length > 0
+        ? `Generated ${toolResult.images.length} visualization(s): ${toolResult.images.map((img) => img.name).join(", ")}. Note: You cannot view images as a text-based model.`
+        : undefined,
+  };
 
   // Add tool message to conversation for current AI turn
   const toolMessage: ChatMessage = {
     role: "tool",
-    content: JSON.stringify(toolResult),
+    content: JSON.stringify(modelResult),
     tool_call_id: toolCall.id,
     tool_name: toolCall.name,
   };
@@ -499,8 +619,9 @@ export function useChatStream() {
     (s) => s.completeAssistantStep,
   );
   const addMessage = useConversationStore((s) => s.addMessage);
-  const runPython = useSandboxStore((s) => s.runPythonSafe);
+  const runPythonWithRetry = useSandboxStore((s) => s.runPythonWithRetry);
   const query = useDuckDBStore((s) => s.query);
+  const { waitForSandbox } = useSandboxRetry();
 
   const readChatStream = useCallback(
     async (
@@ -577,7 +698,8 @@ export function useChatStream() {
           for (const toolCall of stepState.stepToolCalls) {
             const toolResult = await executeToolCall(
               toolCall,
-              runPython,
+              runPythonWithRetry,
+              () => waitForSandbox(() => useSandboxStore.getState().ready),
               query,
             );
             addToolResultToConversation(toolCall, toolResult, context);
@@ -605,8 +727,9 @@ export function useChatStream() {
       newAssistantStep,
       completeAssistantStep,
       addMessage,
-      runPython,
+      runPythonWithRetry,
       query,
+      useSandboxStore,
     ],
   );
 

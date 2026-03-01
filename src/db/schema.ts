@@ -10,6 +10,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm/relations";
+import type { ToolCall } from "@/types/chat";
 
 export const usersTable = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -64,15 +65,7 @@ export const messagesTable = pgTable("messages", {
   reasoning: text("reasoning"),
   content: text("content").notNull(),
   // Tool calls made by the assistant
-  tool_calls: jsonb("toolCalls").$type<
-    {
-      id: string;
-      name: string;
-      arguments: string;
-      description?: string; // Short 1-2 line description for UI display
-      result?: string;
-    }[]
-  >(),
+  tool_calls: jsonb("toolCalls").$type<ToolCall[]>(),
   // For streaming: track if message is complete
   is_complete: boolean("isComplete").default(true),
   // Token counts for cost tracking

@@ -1,4 +1,5 @@
 import type { ToolSet } from "ai";
+import type { ToolCall as TypedToolCall, ToolResult as TypedToolResult } from "@/types/chat";
 
 // Import tool definitions
 import { webSearchTool } from "./webSearch";
@@ -21,7 +22,7 @@ export {
 } from "./insightsTool";
 
 /**
- * Tool execution result shape
+ * Tool execution result shape (internal use)
  */
 export interface ToolResult {
   ok: boolean;
@@ -38,16 +39,8 @@ export interface ToolContext {
   runDuckDB?: (query: string) => Promise<ToolResult>;
 }
 
-/**
- * Type for tool call tracking
- */
-export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: string;
-  description?: string; // Short 1-2 line description for UI display
-  result?: string;
-}
+// Re-export typed ToolCall and ToolResult with different names
+export type { TypedToolCall as ToolCall, TypedToolResult };
 
 /**
  * Stream event types
@@ -55,7 +48,7 @@ export interface ToolCall {
 export type StreamEvent =
   | { type: "text-delta"; textDelta: string }
   | { type: "reasoning"; text: string }
-  | { type: "tool-call"; toolCall: ToolCall }
+  | { type: "tool-call"; toolCall: TypedToolCall }
   | { type: "tool-result"; toolCallId: string; result: ToolResult }
   | {
       type: "finish";

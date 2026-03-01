@@ -13,15 +13,41 @@ import {
   type MessageToSave,
   type StreamResult,
 } from "@/hooks/useChatStream";
-import type { Message } from "@/types/chat";
+import type { Message, ToolCall } from "@/types/chat";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { uploadImageToSignedUrl } from "@/utils/images.client";
+import { getImageUploadUrl } from "@/utils/images.functions";
 
 interface MessageSaveResult {
   savedIds: Map<number, string>;
   successCount: number;
 }
 
+interface ServerResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+function toolResultToContent(result: ToolCall["result"]): string {
+  if (!result) return "";
+  if (typeof result === "string") return result;
+  if (result.type === "text") return result.value;
+  if (result.type === "image")
+    return `[Image generated: ${result.images.map((i) => i.name).join(", ")}]`;
+  if (result.type === "other")
+    return result.error ?? JSON.stringify(result.value ?? {});
+  return JSON.stringify(result);
+}
+
 export const PromptBox = React.memo(
-  ({ workspaceId }: { workspaceId: string }) => {
+  ({
+    supabase,
+    workspaceId,
+  }: {
+    supabase: SupabaseClient;
+    workspaceId: string;
+  }) => {
     const [input, setInput] = useState("");
     const [isStreaming, setIsStreaming] = useState(false);
     const conversation = useConversationStore((s) => s.conversation);
@@ -32,12 +58,13 @@ export const PromptBox = React.memo(
     const setConversations = useConversationStore((s) => s.setConversations);
     const newConvo = useServerFn(newConversation);
     const addMessageServer = useServerFn(newMessage);
+    const getImageUploadPermission = useServerFn(getImageUploadUrl);
 
     const textareaRef = useAutoResizeTextarea(input);
     const readChatStream = useChatStream();
 
     const convertToChatMessages = useCallback((): ChatMessage[] => {
-      const MAX_CONTEXT_MESSAGES = 100; // Keep last 50 messages for context window
+      const MAX_CONTEXT_MESSAGES = 30;
       const chatMessages: ChatMessage[] = [];
 
       // Filter to only complete, non-temp messages
@@ -77,7 +104,7 @@ export const PromptBox = React.memo(
               if (toolCall.result) {
                 chatMessages.push({
                   role: "tool" as const,
-                  content: toolCall.result,
+                  content: toolResultToContent(toolCall.result),
                   tool_call_id: toolCall.id,
                   tool_name: toolCall.name,
                 });
@@ -194,9 +221,9 @@ export const PromptBox = React.memo(
               completion_tokens: msgToSave.completion_tokens ?? null,
             };
 
-            const result = await addMessageServer({
+            const result = (await addMessageServer({
               data: [dbMessage],
-            });
+            })) as ServerResponse<Message[]>;
 
             if (result.success && result.data?.[0]) {
               savedIds.set(i, result.data[0].id);
@@ -307,6 +334,38 @@ export const PromptBox = React.memo(
           setIsStreaming(false);
           return;
         }
+
+        const imagesToUpload: {
+          imageObj: { name: string; url: string };
+          permission: { path: string; signedUrl: string; token: string; publicUrl: string };
+        }[] = [];
+
+        for (const msg of streamResult.messagesToSave) {
+          if (msg.role !== "assistant" || !msg.tool_calls) continue;
+
+          for (const tc of msg.tool_calls) {
+            if (tc.result?.type !== "image") continue;
+
+            for (const img of tc.result.images) {
+              const uploadPerm = await getImageUploadPermission({
+                data: { workspaceId },
+              });
+              if (!uploadPerm.success || !uploadPerm.data) continue;
+
+              imagesToUpload.push({ imageObj: img, permission: uploadPerm.data });
+            }
+          }
+        }
+
+        await Promise.all(
+          imagesToUpload.map(async ({ imageObj, permission }) => {
+            imageObj.url = await uploadImageToSignedUrl(
+              supabase,
+              permission,
+              imageObj.url,
+            );
+          })
+        );
 
         const { savedIds } = await saveMessagesToDatabase(
           streamResult.messagesToSave,

@@ -77,7 +77,6 @@ export const useInsightsStore = create<InsightsStoreState>((set, get) => ({
     try {
       const storageKey = getStorageKey(workspaceId);
       const stored = localStorage.getItem(storageKey);
-      console.log("loaded insights", stored);
 
       if (stored) {
         const parsed = JSON.parse(stored) as InsightsData;

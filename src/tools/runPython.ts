@@ -7,7 +7,7 @@ import type { ToolResult } from "./index";
  */
 export const runPythonTool = tool({
   description:
-    "Execute Python code in a browser-based sandbox using Pyodide. Supports pandas, numpy, and standard library. Use this for data analysis, transformations, and calculations.",
+    "Execute Python code in a browser-based sandbox using Pyodide. Supports pandas, numpy, matplotlib, and standard library. Use this for data analysis, transformations, calculations, and visualizations. IMPORTANT: You must CREATE plots using plt.figure(), plt.bar(), plt.plot(), etc. - just querying data will NOT generate any visualization.",
   inputSchema: z.object({
     code: z
       .string()

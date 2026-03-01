@@ -19,7 +19,6 @@ export const uploadFile = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const file = data.get("file");
     if (!(file instanceof File)) throw new Error("No file found");
-    console.log("name: ", file.name);
 
     try {
       const user = getCurrentUserFromCookie();

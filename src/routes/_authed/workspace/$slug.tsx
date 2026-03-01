@@ -13,12 +13,20 @@ import { WorkspaceSkeleton } from "@/components/skeletons/WorkspaceSkeleton";
 import { getWorkspacePreview } from "@/utils/workspaces.functions";
 import { useSandboxStore } from "@/store/sandbox";
 import { CodeEditor } from "@/components/Code";
-import { useInitializeInsights } from "@/store/insights";
 import { useInsightsStore } from "@/store/insights";
 import { loadInsightsFromDB } from "@/utils/insights.server";
 import { useServerFn } from "@tanstack/react-start";
 import { useConversationStore } from "@/store/conversation";
 import { useDuckDBStore } from "@/store/duckdb";
+import { useBeforeUnload } from "@/hooks/useBeforeUnload";
+
+interface LoaderData {
+  env: { data: { supabaseProjectUrl: string; supabaseAnonKey: string } };
+  slug: string;
+  workspace: any;
+  conversation: any;
+  messages: {} | any;
+}
 
 export const Route = createFileRoute("/_authed/workspace/$slug")({
   loader: async ({ params, context }) => {
@@ -52,8 +60,8 @@ export const Route = createFileRoute("/_authed/workspace/$slug")({
       slug,
       workspace,
       conversation,
-      messages,
-    };
+      messages: messages ?? {},
+    } as LoaderData;
   },
   pendingComponent: WorkspaceSkeleton,
   errorComponent: ({ error }) => (
@@ -74,13 +82,14 @@ function RouteComponent() {
   const loadInsightsFromDBFn = useServerFn(loadInsightsFromDB);
 
   const supabase = useMemo(() => {
+    if (!loaderData) return null;
     return createClient(
       loaderData.env.data.supabaseProjectUrl,
       loaderData.env.data.supabaseAnonKey,
     );
   }, [
-    loaderData.env.data.supabaseProjectUrl,
-    loaderData.env.data.supabaseAnonKey,
+    loaderData?.env.data.supabaseProjectUrl,
+    loaderData?.env.data.supabaseAnonKey,
   ]);
 
   const initPythonSandbox = useSandboxStore((s) => s.init);
@@ -93,27 +102,35 @@ function RouteComponent() {
   const previousWorkspaceId = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!loaderData) return;
+
     const currentSlug = loaderData.slug;
-    
+
     // Check if we're switching to a different workspace
-    if (previousWorkspaceId.current !== null && 
-        previousWorkspaceId.current !== currentSlug) {
+    if (
+      previousWorkspaceId.current !== null &&
+      previousWorkspaceId.current !== currentSlug
+    ) {
       // Workspace changed - clear old data
-      console.log(`[Workspace] Switching from ${previousWorkspaceId.current} to ${currentSlug}`);
       resetFileStore();
       resetConversationStore();
       resetDuckDBStore();
-      
+
       // Also clear insights for the new workspace (will be loaded from DB)
       const workspaceId = currentSlug !== "new" ? currentSlug : null;
       if (workspaceId) {
         useInsightsStore.getState().reset();
       }
     }
-    
+
     // Update previous workspace ID
     previousWorkspaceId.current = currentSlug;
-  }, [loaderData.slug, resetFileStore, resetConversationStore, resetDuckDBStore]);
+  }, [
+    loaderData?.slug,
+    resetFileStore,
+    resetConversationStore,
+    resetDuckDBStore,
+  ]);
 
   useEffect(() => {
     initPythonSandbox();
@@ -121,13 +138,15 @@ function RouteComponent() {
 
   // Load insights from DB when switching to an existing workspace
   useEffect(() => {
+    if (!loaderData) return;
+
     const workspaceId = loaderData.slug;
-    
+
     if (workspaceId !== "new" && workspaceId) {
       const loadInsights = async () => {
         try {
           const result = await loadInsightsFromDBFn({ data: workspaceId });
-          
+
           if (result.success && result.data) {
             setInsightsFromDB(workspaceId, result.data);
           } else {
@@ -140,16 +159,29 @@ function RouteComponent() {
           useInsightsStore.getState().loadInsights(workspaceId);
         }
       };
-      
+
       loadInsights();
     } else if (workspaceId === "new") {
       // New workspace - reset insights
       useInsightsStore.getState().reset();
     }
-  }, [loaderData.slug, loadInsightsFromDBFn, setInsightsFromDB]);
+  }, [loaderData?.slug, loadInsightsFromDBFn, setInsightsFromDB]);
 
-  // Initialize insights store for this workspace (fallback)
-  useInitializeInsights(loaderData.slug !== "new" ? loaderData.slug : null);
+  // Initialize insights from localStorage as fallback (client-side only)
+  useEffect(() => {
+    if (!loaderData) return;
+    const workspaceId = loaderData.slug !== "new" ? loaderData.slug : null;
+    if (workspaceId) {
+      useInsightsStore.getState().loadInsights(workspaceId);
+    }
+  }, [loaderData?.slug]);
+
+  // Warn about pending image uploads before leaving
+  useBeforeUnload();
+
+  if (!loaderData || !supabase) {
+    return <WorkspaceSkeleton />;
+  }
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
@@ -169,6 +201,7 @@ function RouteComponent() {
                     ? loaderData.conversation.data
                     : null
                 }
+                supabase={supabase}
                 initialMessages={
                   loaderData.messages?.success ? loaderData.messages.data : []
                 }

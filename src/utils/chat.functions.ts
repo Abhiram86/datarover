@@ -7,6 +7,7 @@ import { conversationsTable, messagesTable } from "@/db/schema";
 import { systemPrompt } from "@/lib/systemPrompt";
 import { eq, or } from "drizzle-orm";
 import { getCurrentUserFromCookie } from "./jwt.server";
+import { ToolResult } from "@/types";
 
 // Configure NVIDIA provider via OpenAI-compatible client
 const nvidia = createOpenAICompatible({
@@ -151,10 +152,7 @@ const tools: ToolSet = {
         .optional()
         .default(10)
         .describe("Maximum number of insights to return (default: 10)"),
-      id: z
-        .number()
-        .optional()
-        .describe("Specific insight ID to retrieve"),
+      id: z.number().optional().describe("Specific insight ID to retrieve"),
     }),
     execute: async () => ({
       ok: true,
@@ -167,14 +165,20 @@ const tools: ToolSet = {
     inputSchema: z.object({
       type: z
         .enum(["important", "general", "user_goals"])
-        .describe("REQUIRED. The insight category. Must be exactly: 'important', 'general', or 'user_goals'. Use 'type' NOT 'category'."),
+        .describe(
+          "REQUIRED. The insight category. Must be exactly: 'important', 'general', or 'user_goals'. Use 'type' NOT 'category'.",
+        ),
       context: z
         .string()
-        .describe("REQUIRED. The insight content/text to save. Use 'context' NOT 'content'. Be concise but specific."),
+        .describe(
+          "REQUIRED. The insight content/text to save. Use 'context' NOT 'content'. Be concise but specific.",
+        ),
       source: z
         .string()
         .optional()
-        .describe("Source of the insight (e.g., 'correlation analysis', 'user request')"),
+        .describe(
+          "Source of the insight (e.g., 'correlation analysis', 'user request')",
+        ),
       id: z
         .number()
         .optional()
@@ -456,14 +460,19 @@ export const generalChatStream = createServerFn({ method: "POST" })
   })
   .handler(async function* ({ data }) {
     const { messages } = data;
+    const CONTEXT_WINDOW_LIMIT = 30;
 
     try {
       const sdkMessages = convertToSdkMessages(messages);
+      const messagesForAPI =
+        sdkMessages.length > CONTEXT_WINDOW_LIMIT
+          ? [sdkMessages[0], ...sdkMessages.slice(-CONTEXT_WINDOW_LIMIT + 1)]
+          : sdkMessages;
 
       const result = streamText({
         model: nvidia("z-ai/glm4.7"),
         system: systemPrompt,
-        messages: sdkMessages as any,
+        messages: messagesForAPI as any,
         tools,
         toolChoice: "auto",
         temperature: 1,
@@ -527,13 +536,31 @@ export const newConversation = createServerFn({ method: "POST" })
     }
   });
 
-// Schema for tool calls in messages
+const toolResultSchema: z.ZodType<ToolResult> = z.union([
+  z.object({
+    type: z.literal("text"),
+    value: z.string(),
+    consoleOutput: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal("image"),
+    images: z.array(z.object({ name: z.string(), url: z.string() })),
+    consoleOutput: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal("other"),
+    error: z.string().optional(),
+    value: z.record(z.string(), z.any()).optional(),
+    consoleOutput: z.array(z.string()).optional(),
+  }),
+]);
+
 const toolCallSchema = z.object({
   id: z.string(),
   name: z.string(),
   arguments: z.string(),
   description: z.string().optional(),
-  result: z.string().optional(),
+  result: toolResultSchema.optional(),
 });
 
 // Schema for message creation
@@ -541,7 +568,7 @@ const newMessageSchema = z.array(
   z.object({
     workspace_id: z.string(),
     conversation_id: z.string(),
-    role: z.enum(["user", "assistant", "tool"]),
+    role: z.enum(["user", "assistant", "system", "tool"]),
     content: z.string(),
     reasoning: z.string().nullable().optional(),
     is_complete: z.boolean().optional(),

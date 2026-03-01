@@ -8,12 +8,17 @@ export interface Conversation {
 
 export type MessageRole = "user" | "assistant" | "tool" | "system";
 
+export type ToolResult =
+  | { type: "text"; value: string; consoleOutput?: string[] }
+  | { type: "image"; images: { name: string; url: string }[]; consoleOutput?: string[] }
+  | { type: "other"; error?: string; value?: Record<string, unknown>; consoleOutput?: string[] };
+
 export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
-  description?: string; // Short 1-2 line description for UI display
-  result?: string;
+  description?: string;
+  result?: ToolResult;
 }
 
 export type Message = {
