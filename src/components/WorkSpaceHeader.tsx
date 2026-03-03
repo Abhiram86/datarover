@@ -1,11 +1,19 @@
+import { useState, useEffect, useRef } from "react";
 import { useFileStore } from "@/store/file";
 import { useUserStore } from "@/store/user";
-import { uploadFile, writeFileToDB, convertAndUploadFile } from "@/utils/files.functions";
+import { useInsightsStore } from "@/store/insights";
+import {
+  uploadFile,
+  writeFileToDB,
+  convertAndUploadFile,
+} from "@/utils/files.functions";
 import type { WorkspaceHeaderProps } from "@/types/server";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { FileSpreadsheet, Image, FileCode, ChevronDown, Brain } from "lucide-react";
+import InsightsViewer from "@/components/InsightsViewer";
 
 export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const uploadFileFn = useServerFn(uploadFile);
@@ -14,6 +22,25 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
   const writeFileToDBFn = useServerFn(writeFileToDB);
   const queryClient = useQueryClient();
   const { user } = useUserStore((s) => s.data);
+  const insights = useInsightsStore((s) => s.insights);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        exportRef.current &&
+        !exportRef.current.contains(event.target as Node)
+      ) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const totalInsightsCount = insights.important.length + insights.general.length + insights.user_goals.length;
 
   const mutation = useMutation({
     mutationFn: (data: {
@@ -54,7 +81,9 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
 
       // 1. Initialize the loading toast
       const toastId = toast.loading(
-        isParquet ? "Initializing secure upload..." : "Converting to Parquet format..."
+        isParquet
+          ? "Initializing secure upload..."
+          : "Converting to Parquet format...",
       );
 
       const formData = new FormData();
@@ -134,9 +163,12 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
               },
             );
           } else {
-            toast.error(resp.error?.message || "Failed to convert and upload file", {
-              id: toastId,
-            });
+            toast.error(
+              resp.error?.message || "Failed to convert and upload file",
+              {
+                id: toastId,
+              },
+            );
             setError("Failed to upload file");
           }
         }
@@ -213,7 +245,11 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
           </span>
           {!isUploading && (
             <div className="px-1.5 py-0.5 rounded bg-neutral-strong/5 border border-neutral-strong/5 text-[9px] font-black text-neutral-strong/40">
-              {preview?.fileType === "csv" ? "CSV" : preview?.fileType === "excel" ? "XLSX" : "PARQUET"}
+              {preview?.fileType === "csv"
+                ? "CSV"
+                : preview?.fileType === "excel"
+                  ? "XLSX"
+                  : "PARQUET"}
             </div>
           )}
         </div>
@@ -239,13 +275,55 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
             14 Mutations
           </span>
         </div>
+
+        <button
+          onClick={() => setShowInsights(!showInsights)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-neutral-strong/50 hover:text-neutral-strong hover:bg-neutral-strong/5 transition-all"
+        >
+          <Brain size={14} className={showInsights ? "text-neutral-strong" : "text-neutral-strong/50"} />
+          <span className="uppercase tracking-widest">Insights</span>
+          <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${totalInsightsCount > 0 ? "bg-neutral-strong/10 text-neutral-strong" : "bg-neutral-strong/5 text-neutral-strong/40"}`}>
+            {totalInsightsCount}
+          </span>
+        </button>
       </div>
 
       {/* Right: User/Session Actions (No more Execute) */}
       <div className="flex items-center gap-4">
-        <button className="text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong transition-colors uppercase tracking-widest">
-          Export
-        </button>
+        <div className="relative" ref={exportRef}>
+          <button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            className="flex items-center gap-1 text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong transition-colors uppercase tracking-widest"
+          >
+            Export
+            <ChevronDown
+              size={12}
+              className={
+                showExportMenu
+                  ? "rotate-180 transition-transform"
+                  : "transition-transform"
+              }
+            />
+          </button>
+          {showExportMenu && (
+            <div className="absolute right-0 top-10 w-40 bg-primary border border-neutral-strong/10 rounded-xl shadow-xl shadow-neutral-strong/5 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+              <div className="p-1.5 space-y-0.5">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-bold text-neutral-strong/70 hover:bg-neutral-strong/5 hover:text-neutral-strong transition-colors cursor-not-allowed opacity-50">
+                  <FileSpreadsheet size={14} />
+                  Export File
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-bold text-neutral-strong/70 hover:bg-neutral-strong/5 hover:text-neutral-strong transition-colors cursor-not-allowed opacity-50">
+                  <Image size={14} />
+                  Export Images
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-[11px] font-bold text-neutral-strong/70 hover:bg-neutral-strong/5 hover:text-neutral-strong transition-colors cursor-not-allowed opacity-50">
+                  <FileCode size={14} />
+                  Export Notebook
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
         <div
           className="w-7 h-7 rounded-full bg-linear-to-br from-neutral-strong/20 to-neutral-strong/5 border border-neutral-strong/10 flex items-center justify-center text-[10px] font-bold"
           title={user?.name || "User"}
@@ -253,6 +331,8 @@ export default function WorkspaceHeader({ supabase }: WorkspaceHeaderProps) {
           {userInitials}
         </div>
       </div>
+
+      <InsightsViewer isOpen={showInsights} onClose={() => setShowInsights(false)} />
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useCallback } from "react";
 import { generalChatStream } from "@/utils/chat.functions";
 import { useSandboxStore } from "@/store/sandbox";
 import { useConversationStore } from "@/store/conversation";
+import { useNotebookStore } from "@/store/notebook";
+import { useAbortStore } from "@/store/abort";
 import type { ToolCall, ToolResult } from "@/types";
 import { useDuckDBStore } from "@/store/duckdb";
 import {
@@ -311,13 +313,14 @@ function saveAssistantStepMessage(
   context: StreamContext,
   promptTokens: number,
   completionTokens: number,
+  aborted: boolean = false,
 ): void {
   context.messagesToSave.push({
     role: "assistant",
     content: stepState.stepContent,
     reasoning: stepState.stepReasoning || null,
     tool_calls: stepState.stepToolCalls,
-    is_complete: !stepState.stepHadError,
+    is_complete: !stepState.stepHadError || aborted,
     step_number: stepState.stepCount,
     is_final_response: false,
   });
@@ -428,18 +431,50 @@ async function executeToolCall(
         images: formattedImages,
       };
 
+      // Store code and output in notebook
+      const notebookStore = useNotebookStore.getState();
+      const parsedArgs = JSON.parse(toolCall.arguments);
+      const outputType = toolResult.error ? "error" : formattedImages?.length ? "image" : "text";
+      const outputText = toolResult.error 
+        ? String(toolResult.error) 
+        : toolResult.result 
+          ? JSON.stringify(toolResult.result, null, 2) 
+          : toolResult.consoleOutput?.join("\n") || "";
+      
+      notebookStore.addBlock(
+        parsedArgs.code,
+        outputText,
+        outputType,
+        formattedImages?.map((img: { url: string }) => img.url)
+      );
+
       toolCall.result = toTypedResult(enhancedResult);
 
       return enhancedResult;
     } catch (execError) {
+      const errorMessage = execError instanceof Error ? execError.message : "Execution failed";
       const toolResult = {
         ok: false,
-        error:
-          execError instanceof Error ? execError.message : "Execution failed",
+        error: errorMessage,
         images: null,
         result: undefined,
         consoleOutput: undefined,
       };
+
+      // Store error in notebook
+      try {
+        const notebookStore = useNotebookStore.getState();
+        const parsedArgs = JSON.parse(toolCall.arguments);
+        notebookStore.addBlock(
+          parsedArgs.code,
+          errorMessage,
+          "error",
+          []
+        );
+      } catch {
+        // Ignore notebook storage errors
+      }
+
       toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] run_python error:`, toolResult.error);
       return toolResult;
@@ -543,6 +578,67 @@ async function executeToolCall(
       };
       toolCall.result = toTypedResult(toolResult);
       console.error(`[Chat Stream] delete_insight error:`, toolResult.error);
+      return toolResult;
+    }
+  }
+
+  // Notebook read_code - client-side execution
+  if (toolCall.name === "read_code") {
+    try {
+      const args = JSON.parse(toolCall.arguments);
+      const notebookStore = useNotebookStore.getState();
+
+      let blocks;
+      if (args.head !== undefined) {
+        blocks = notebookStore.getHead(args.head);
+      } else if (args.tail !== undefined) {
+        blocks = notebookStore.getTail(args.tail);
+      } else if (args.blockId !== undefined) {
+        const block = notebookStore.getBlock(args.blockId);
+        blocks = block ? [block] : [];
+      } else {
+        const toolResult = {
+          ok: false,
+          error: "Must specify head, tail, or blockId",
+        };
+        toolCall.result = toTypedResult(toolResult);
+        return toolResult;
+      }
+
+      if (blocks.length === 0) {
+        const toolResult = {
+          ok: true,
+          result: "No code blocks found in the notebook session.",
+        };
+        toolCall.result = toTypedResult(toolResult);
+        return toolResult;
+      }
+
+      const formatted = blocks
+        .map(
+          (block, idx) =>
+            `--- Block ${idx + 1} ---\nCode:\n${block.code}\n\nOutput:\n${block.output}${
+              block.images && block.images.length > 0
+                ? `\n\nImages: ${block.images.length} image(s) generated`
+                : ""
+            }`
+        )
+        .join("\n\n");
+
+      const toolResult = {
+        ok: true,
+        result: formatted,
+      };
+      toolCall.result = toTypedResult(toolResult);
+      return toolResult;
+    } catch (execError) {
+      const toolResult = {
+        ok: false,
+        error:
+          execError instanceof Error ? execError.message : "Execution failed",
+      };
+      toolCall.result = toTypedResult(toolResult);
+      console.error(`[Chat Stream] read_code error:`, toolResult.error);
       return toolResult;
     }
   }
@@ -654,6 +750,10 @@ export function useChatStream() {
           });
 
           for await (const chunk of stream) {
+            if (useAbortStore.getState().isAborted) {
+              break;
+            }
+
             const lines = chunk.split("\n").filter(Boolean);
 
             for (const line of lines) {
@@ -677,6 +777,8 @@ export function useChatStream() {
             }
           }
 
+          const wasAborted = useAbortStore.getState().isAborted;
+
           completeAssistantStep(tempAssistantId);
 
           saveAssistantStepMessage(
@@ -684,7 +786,12 @@ export function useChatStream() {
             context,
             context.promptTokens,
             context.completionTokens,
+            wasAborted,
           );
+
+          if (wasAborted) {
+            useAbortStore.getState().reset();
+          }
 
           if (
             !stepState.stepHadToolCall ||

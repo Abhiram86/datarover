@@ -9,6 +9,7 @@ import {
   writeInsightTool,
   deleteInsightTool,
 } from "./insightsTool";
+import { readCodeTool } from "./readCode";
 
 // Re-export individual tool definitions
 export { runPythonTool } from "./runPython";
@@ -20,6 +21,7 @@ export {
   writeInsightTool,
   deleteInsightTool,
 } from "./insightsTool";
+export { readCodeTool } from "./readCode";
 
 /**
  * Tool execution result shape (internal use)
@@ -58,7 +60,7 @@ export type StreamEvent =
 
 /**
  * ToolSet for AI SDK
- * Note: run_python, run_duckdb, and insights tools are client-side only and handled separately
+ * Note: run_python, run_duckdb, read_code, and insights tools are client-side only and handled separately
  */
 export const tools: ToolSet = {
   search_web: webSearchTool,
@@ -66,6 +68,7 @@ export const tools: ToolSet = {
   read_insights: readInsightsTool,
   write_insight: writeInsightTool,
   delete_insight: deleteInsightTool,
+  read_code: readCodeTool,
 };
 
 /**

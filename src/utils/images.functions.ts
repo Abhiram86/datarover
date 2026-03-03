@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { db } from "./db.server";
+import { workspacesTable } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { getImageUploadPermission } from "./images.server";
 import { getCurrentUserFromCookie } from "./jwt.server";
 import type { ImageUploadResult } from "@/types/image";
@@ -18,6 +21,18 @@ export const getImageUploadUrl = createServerFn({ method: "POST" })
         return {
           success: false,
           error: { message: "Unauthorized" },
+        };
+      }
+
+      const workspace = await db
+        .select({ user_id: workspacesTable.user_id })
+        .from(workspacesTable)
+        .where(eq(workspacesTable.id, data.workspaceId));
+
+      if (!workspace.length || workspace[0].user_id !== user.userId) {
+        return {
+          success: false,
+          error: { message: "Workspace not found or access denied" },
         };
       }
 

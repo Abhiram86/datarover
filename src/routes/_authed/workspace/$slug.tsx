@@ -12,13 +12,14 @@ import { useEffect, useMemo, useRef } from "react";
 import { WorkspaceSkeleton } from "@/components/skeletons/WorkspaceSkeleton";
 import { getWorkspacePreview } from "@/utils/workspaces.functions";
 import { useSandboxStore } from "@/store/sandbox";
-import { CodeEditor } from "@/components/Code";
+import { CodeNotebook } from "@/components/CodeNotebook";
 import { useInsightsStore } from "@/store/insights";
 import { loadInsightsFromDB } from "@/utils/insights.server";
 import { useServerFn } from "@tanstack/react-start";
 import { useConversationStore } from "@/store/conversation";
 import { useDuckDBStore } from "@/store/duckdb";
 import { useBeforeUnload } from "@/hooks/useBeforeUnload";
+import { useNotebookStore } from "@/store/notebook";
 
 interface LoaderData {
   env: { data: { supabaseProjectUrl: string; supabaseAnonKey: string } };
@@ -176,8 +177,19 @@ function RouteComponent() {
     }
   }, [loaderData?.slug]);
 
+  useEffect(() => {
+    const workspaceId = loaderData?.slug;
+    if (workspaceId) {
+      useNotebookStore.getState().loadNotebook(workspaceId);
+    }
+  }, [loaderData?.slug]);
+
   // Warn about pending image uploads before leaving
-  useBeforeUnload();
+  useBeforeUnload(() => {
+    if (loaderData?.slug !== "new") {
+      useNotebookStore.getState().saveNotebook(loaderData.slug);
+    }
+  });
 
   if (!loaderData || !supabase) {
     return <WorkspaceSkeleton />;
@@ -221,7 +233,7 @@ function RouteComponent() {
               </Panel>
               <Panel minSize={33} size={33}>
                 <ClientOnly>
-                  <CodeEditor />
+                  <CodeNotebook />
                 </ClientOnly>
               </Panel>
             </PanelGroup>

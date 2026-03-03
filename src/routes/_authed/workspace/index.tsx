@@ -14,9 +14,10 @@ import {
   Share2,
   Trash2,
   LogOut,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { deleteWorkspace, getWorkspaces } from "@/utils/workspaces.functions";
+import { deleteWorkspace, getWorkspaces, renameWorkspace } from "@/utils/workspaces.functions";
 import {
   queryOptions,
   useMutation,
@@ -53,9 +54,8 @@ export const Route = createFileRoute("/_authed/workspace/")({
   pendingComponent: WorkspaceGridSkeleton,
 });
 
-function RouteComponent() {
-  const { user } = Route.useRouteContext();
-  const workspacesData = Route.useLoaderData();
+const WorkspaceApp = ({ user, workspacesData }: { user: any; workspacesData: any }) => {
+  const [searchQuery, setSearchQuery] = useState("");
 
   if (!workspacesData?.success) {
     return (
@@ -71,10 +71,13 @@ function RouteComponent() {
   }
 
   const workspaces = workspacesData.data;
+  const filteredWorkspaces = workspaces.filter((ws: any) =>
+    ws.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="h-screen w-full flex flex-col bg-primary overflow-hidden">
-      <WorkspaceListHeader user={user} />
+      <WorkspaceListHeader user={user} onSearch={setSearchQuery} />
       <main className="flex-1 overflow-y-auto p-8 max-w-7xl mx-auto w-full">
         <div className="flex items-end justify-between mb-12">
           <div>
@@ -82,7 +85,9 @@ function RouteComponent() {
               Workspaces
             </h1>
             <p className="text-xs font-medium text-neutral-strong/40 uppercase tracking-[0.2em] mt-1">
-              Select a project to resume analysis
+              {searchQuery
+                ? `${filteredWorkspaces.length} workspace${filteredWorkspaces.length !== 1 ? "s" : ""} found`
+                : "Select a project to resume analysis"}
             </p>
           </div>
 
@@ -114,13 +119,28 @@ function RouteComponent() {
             </span>
           </Link>
 
-          {workspaces.map((ws) => (
-            <WorkspaceCard key={ws.id} {...ws} />
-          ))}
+          {filteredWorkspaces.length === 0 && searchQuery ? (
+            <div className="col-span-full flex flex-col items-center justify-center py-16 text-neutral-strong/40">
+              <Search size={32} className="mb-3" />
+              <p className="text-sm font-bold">No workspaces found</p>
+              <p className="text-xs">Try a different search term</p>
+            </div>
+          ) : (
+            filteredWorkspaces.map((ws: any) => (
+              <WorkspaceCard key={ws.id} {...ws} />
+            ))
+          )}
         </div>
       </main>
     </div>
   );
+};
+
+function RouteComponent() {
+  const { user } = Route.useRouteContext();
+  const workspacesData = Route.useLoaderData();
+
+  return <WorkspaceApp user={user} workspacesData={workspacesData} />;
 }
 
 interface WorkspaceCardProps {
@@ -133,10 +153,11 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const deleteWorkspaceFn = useServerFn(deleteWorkspace);
+  const renameWorkspaceFn = useServerFn(renameWorkspace);
 
   const queryClient = useQueryClient();
 
-  const mutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteWorkspaceFn({ data: id }),
     onSuccess: async (result) => {
       if (result.success) {
@@ -155,6 +176,23 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
     },
     onError: () => {
       toast.error("Network error during deletion");
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: (data: { id: string; name: string }) => renameWorkspaceFn({ data }),
+    onSuccess: async (result) => {
+      if (result.success) {
+        toast.success("Workspace renamed successfully");
+        await queryClient.invalidateQueries({
+          queryKey: ["workspaces"],
+        });
+      } else {
+        toast.error("Failed to rename workspace");
+      }
+    },
+    onError: () => {
+      toast.error("Network error during rename");
     },
   });
 
@@ -185,7 +223,7 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
 
           <div className="flex items-center gap-2 justify-end mt-2">
             <button
-              disabled={mutation.isPending}
+              disabled={deleteMutation.isPending}
               onClick={() => toast.dismiss(t.id)}
               className="px-3 py-1.5 text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong uppercase tracking-widest transition-colors"
             >
@@ -207,14 +245,91 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
     );
   };
 
+  const handleRename = (id: string, currentName: string | null) => {
+    const newName = currentName || "";
+    toast.custom(
+      (t) => (
+        <div
+          className={`
+        flex flex-col gap-3 min-w-[320px] p-4 rounded-xl border shadow-2xl
+        bg-primary border-neutral-strong/10 shadow-neutral-strong/5
+        transition-all duration-300 ease-out
+        ${t.visible ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-4 scale-95"}
+      `}
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-neutral-strong/10 rounded-lg">
+              <Edit2 size={16} className="text-neutral-strong" />
+            </div>
+            <div className="flex-1 flex flex-col gap-3">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-neutral-strong/60 leading-none">
+                  Rename Workspace
+                </span>
+              </div>
+              <input
+                type="text"
+                defaultValue={newName}
+                id={`rename-input-${id}`}
+                className="w-full px-3 py-2 bg-neutral-strong/5 border border-neutral-strong/10 rounded-lg text-xs font-bold text-neutral-strong focus:outline-none focus:border-neutral-strong/20"
+                placeholder="Workspace name..."
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 justify-end mt-2">
+            <button
+              disabled={renameMutation.isPending}
+              onClick={() => toast.dismiss(t.id)}
+              className="px-3 py-1.5 text-[10px] font-bold text-neutral-strong/40 hover:text-neutral-strong uppercase tracking-widest transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                const input = document.getElementById(`rename-input-${id}`) as HTMLInputElement;
+                const value = input?.value?.trim();
+                if (!value) {
+                  toast.error("Workspace name cannot be empty");
+                  return;
+                }
+                toast.dismiss(t.id);
+                await executeRename(id, value);
+              }}
+              disabled={renameMutation.isPending}
+              className="px-3 py-1.5 bg-neutral-strong text-primary rounded-md text-[10px] font-black uppercase tracking-widest hover:shadow-xl transition-all shadow-neutral-strong/10 disabled:opacity-50"
+            >
+              Rename
+            </button>
+          </div>
+        </div>
+      ),
+      { duration: 6000 },
+    );
+  };
+
   const executeDelete = async (id: string) => {
     const loadingToast = toast.loading("Purging workspace data...");
 
-    mutation.mutate(id, {
+    deleteMutation.mutate(id, {
       onSettled: () => {
         toast.dismiss(loadingToast);
       },
     });
+  };
+
+  const executeRename = async (id: string, newName: string) => {
+    const loadingToast = toast.loading("Renaming workspace...");
+
+    renameMutation.mutate(
+      { id, name: newName },
+      {
+        onSettled: () => {
+          toast.dismiss(loadingToast);
+        },
+      },
+    );
   };
 
   useEffect(() => {
@@ -274,7 +389,11 @@ const WorkspaceCard = ({ id, name, lastModified }: WorkspaceCardProps) => {
           className="absolute right-2 top-12 w-48 bg-primary border border-neutral-strong/10 rounded-xl shadow-xl shadow-neutral-strong/5 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100"
         >
           <div className="p-1.5 space-y-0.5">
-            <MenuButton icon={<Edit2 size={14} />} label="Rename" />
+            <MenuButton
+              onclick={() => handleRename(id, name)}
+              icon={<Edit2 size={14} />}
+              label="Rename"
+            />
             <MenuButton icon={<Copy size={14} />} label="Duplicate" />
             <MenuButton icon={<Share2 size={14} />} label="Share" />
             <div className="h-px bg-neutral-strong/5 my-1" />
@@ -326,17 +445,24 @@ interface WorkspaceListHeaderProps {
     email: string;
     name: string;
   };
+  onSearch?: (query: string) => void;
 }
 
-const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
+const WorkspaceListHeader = ({ user, onSearch }: WorkspaceListHeaderProps) => {
   const logout = useServerFn(logoutFn);
   const storeLogout = useUserStore((s) => s.actions.logout);
   const [showLogout, setShowLogout] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const logoutRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = async () => {
     storeLogout();
     await logout();
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    onSearch?.(value);
   };
 
   useEffect(() => {
@@ -381,7 +507,17 @@ const WorkspaceListHeader = ({ user }: WorkspaceListHeaderProps) => {
           type="text"
           placeholder="Search projects..."
           className="bg-transparent border-none outline-none focus:ring-0 text-xs w-full ml-2 placeholder:text-neutral-strong/20"
+          value={searchQuery}
+          onChange={(e) => handleSearchChange(e.target.value)}
         />
+        {searchQuery && (
+          <button
+            onClick={() => handleSearchChange("")}
+            className="text-neutral-strong/30 hover:text-neutral-strong transition-colors ml-1"
+          >
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-4">

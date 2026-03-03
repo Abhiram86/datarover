@@ -1,4 +1,5 @@
 import { useConversationStore } from "@/store/conversation";
+import { useAbortStore } from "@/store/abort";
 import { newConversation, newMessage } from "@/utils/chat.functions";
 import { useServerFn } from "@tanstack/react-start";
 import React, { useState, useCallback } from "react";
@@ -15,7 +16,7 @@ import {
 } from "@/hooks/useChatStream";
 import type { Message, ToolCall } from "@/types/chat";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { uploadImageToSignedUrl } from "@/utils/images.client";
+import { uploadImageWithRetry } from "@/utils/images.client";
 import { getImageUploadUrl } from "@/utils/images.functions";
 
 interface MessageSaveResult {
@@ -316,6 +317,8 @@ export const PromptBox = React.memo(
       setInput("");
       setIsStreaming(true);
 
+      useAbortStore.getState().createController();
+
       try {
         const conversationId = await createConversationIfNeeded();
         if (!conversationId) {
@@ -357,15 +360,26 @@ export const PromptBox = React.memo(
           }
         }
 
+        const failedUploads: string[] = [];
         await Promise.all(
           imagesToUpload.map(async ({ imageObj, permission }) => {
-            imageObj.url = await uploadImageToSignedUrl(
+            const result = await uploadImageWithRetry(
               supabase,
               permission,
               imageObj.url,
             );
+            if (result.success && result.url) {
+              imageObj.url = result.url;
+            } else {
+              failedUploads.push(imageObj.name);
+              imageObj.url = "";
+            }
           })
         );
+
+        if (failedUploads.length > 0) {
+          toast.error(`${failedUploads.length} image(s) failed to upload`);
+        }
 
         const { savedIds } = await saveMessagesToDatabase(
           streamResult.messagesToSave,
@@ -389,6 +403,8 @@ export const PromptBox = React.memo(
     }, [
       input,
       isStreaming,
+      supabase,
+      workspaceId,
       createConversationIfNeeded,
       createOptimisticUserMessage,
       streamChatResponse,
@@ -396,6 +412,10 @@ export const PromptBox = React.memo(
       updateUserMessageInStore,
       updateAssistantMessagesInStore,
     ]);
+
+    const handleCancel = useCallback(() => {
+      useAbortStore.getState().abort();
+    }, []);
 
     return (
       <div className="p-4 bg-primary border-t border-neutral-strong/10">
@@ -411,6 +431,8 @@ export const PromptBox = React.memo(
           }}
           disabled={!input.trim() || isStreaming}
           onSubmit={handleSubmit}
+          isStreaming={isStreaming}
+          onCancel={handleCancel}
         />
         <InputHint />
       </div>

@@ -40,3 +40,29 @@ export async function uploadImageToSignedUrl(
 
   return permission.publicUrl;
 }
+
+export interface UploadResult {
+  success: boolean;
+  url?: string;
+  error?: string;
+}
+
+export async function uploadImageWithRetry(
+  supabase: SupabaseClient,
+  permission: ImageUploadPermission,
+  base64Url: string,
+  maxRetries: number = 3
+): Promise<UploadResult> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const url = await uploadImageToSignedUrl(supabase, permission, base64Url);
+      return { success: true, url };
+    } catch (error) {
+      if (attempt === maxRetries) {
+        return { success: false, error: String(error) };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return { success: false, error: "Max retries reached" };
+}

@@ -7,10 +7,10 @@ const pendingQueries: Record<number, any> = {};
 let nextId = 1;
 
 // Cleanup handler on worker termination
-self.addEventListener('terminate', () => {
+self.addEventListener("terminate", () => {
   // Reject all pending queries
   Object.entries(pendingQueries).forEach(([id, entry]) => {
-    entry.reject(new Error('Worker terminated'));
+    entry.reject(new Error("Worker terminated"));
     delete pendingQueries[Number(id)];
   });
   // Clear pyodide reference
@@ -123,46 +123,27 @@ self.onmessage = async (event: MessageEvent<MainToWorker>) => {
         return;
       }
 
-      // Wrap user code inside an async function so top-level `await` inside user code works.
-      // We run that async function at top-level via runPythonAsync, which supports top-level await.
-      const pythonCode = `
-import json, traceback
-# user code will run inside this async wrapper
-async def __user_wrapper():
-${code
-  .split("\n")
-  .map((line) => "    " + line) // indent user code into the function body
-  .join("\n")}
+      try {
+        // Run user code directly at module level
+        await pyodide.runPythonAsync(code);
 
-# Execute the async wrapper first, then capture plots
-result = await __user_wrapper()
-# After user's code runs, capture plots (capture_all_plots must be available in globals)
+        // After execution, capture plots
+        const proxy = await pyodide.runPythonAsync(`
+import json, traceback
 try:
     images = capture_all_plots()
-    # Return structured JSON string to JS to avoid proxy/exception ambiguity
-    printable = json.dumps({"ok": True, "images": images})
-except Exception as e:
-    printable = json.dumps({"ok": False, "error": traceback.format_exc()})
+    __result = json.dumps({"ok": True, "images": images})
+except Exception:
+    __result = json.dumps({"ok": False, "error": traceback.format_exc()})
 
-# Return the structured result
-printable
-`;
+__result
+`);
 
-      try {
-        // Execute pythonCode (runPythonAsync supports top-level await)
-        const proxyOrValue = await pyodide.runPythonAsync(pythonCode);
+        let resultStr =
+          proxy && typeof proxy.toJs === "function" ? proxy.toJs() : proxy;
 
-        // Safely convert result (may already be JS string or a PyProxy)
-        let resultStr: any;
-        if (proxyOrValue && typeof proxyOrValue.toJs === "function") {
-          resultStr = proxyOrValue.toJs();
-          // Always destroy proxy to prevent memory leak
-          proxyOrValue.destroy();
-        } else {
-          resultStr = proxyOrValue;
-        }
+        if (proxy?.destroy) proxy.destroy();
 
-        // resultStr should be a JSON string per our Python wrapper
         const parsed = JSON.parse(resultStr);
 
         if (!parsed.ok) {
@@ -180,7 +161,6 @@ printable
           });
         }
       } catch (error) {
-        // Any JS / Pyodide-level error (including timeouts) is sent back explicitly
         self.postMessage({
           type: "EXEC_ERROR",
           id,

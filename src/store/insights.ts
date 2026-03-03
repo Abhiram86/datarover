@@ -50,6 +50,11 @@ interface InsightsStoreState {
     type: "important" | "general" | "user_goals",
     id: number,
   ) => boolean;
+  moveInsight: (
+    fromType: "important" | "general" | "user_goals",
+    toType: "important" | "general" | "user_goals",
+    id: number,
+  ) => boolean;
 
   reset: () => void;
 }
@@ -263,6 +268,31 @@ export const useInsightsStore = create<InsightsStoreState>((set, get) => ({
       insights: {
         ...state.insights,
         [type]: state.insights[type].filter((i) => i.id !== id),
+      },
+    }));
+
+    saveInsights();
+    return true;
+  },
+
+  moveInsight: (
+    fromType: "important" | "general" | "user_goals",
+    toType: "important" | "general" | "user_goals",
+    id: number,
+  ) => {
+    const { insights, saveInsights } = get();
+
+    const index = insights[fromType].findIndex((i) => i.id === id);
+    if (index === -1) return false;
+
+    const movedInsight = insights[fromType][index];
+    const updatedInsight = { ...movedInsight, type: toType };
+
+    set((state) => ({
+      insights: {
+        ...state.insights,
+        [fromType]: state.insights[fromType].filter((i) => i.id !== id),
+        [toType]: [...state.insights[toType], updatedInsight],
       },
     }));
 

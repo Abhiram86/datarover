@@ -115,7 +115,7 @@
 ## AI SDK Integration
 
 - Use `createServerFn` for AI chat endpoints with `stream` response
-- Chat streaming: Parse JSON chunks with type区分 (reasoning vs content)
+- Chat streaming: Parse JSON chunks with type distinction (reasoning vs content)
 - Use `requestAnimationFrame` for batched UI updates during streaming
 - Conversation stores track: id, messages, current stream state
 - Placeholder messages use `temp-${Date.now()}` format for optimistic updates

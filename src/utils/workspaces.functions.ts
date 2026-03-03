@@ -202,6 +202,74 @@ export const deleteWorkspace = createServerFn({ method: "POST" })
     }
   });
 
+export const renameWorkspace = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string; name: string }) => {
+    if (!data.id || typeof data.id !== "string") {
+      return { success: false, error: "Invalid workspace ID" };
+    }
+    if (!data.name || typeof data.name !== "string") {
+      return { success: false, error: "Invalid workspace name" };
+    }
+    return { success: true, data };
+  })
+  .handler(async ({ data }) => {
+    if (!data.success) {
+      return {
+        success: false,
+        error: { message: data.error },
+      };
+    }
+
+    try {
+      const user = getCurrentUserFromCookie();
+      if (!user) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      const workspace = await db
+        .select({ user_id: workspacesTable.user_id })
+        .from(workspacesTable)
+        .where(eq(workspacesTable.id, data.data!.id))
+        .limit(1);
+
+      if (workspace.length === 0) {
+        return {
+          success: false,
+          error: { message: "Workspace not found" },
+        };
+      }
+
+      if (workspace[0].user_id !== user.userId) {
+        return {
+          success: false,
+          error: { message: "Unauthorized" },
+        };
+      }
+
+      await db
+        .update(workspacesTable)
+        .set({ name: data.data!.name })
+        .where(eq(workspacesTable.id, data.data!.id));
+
+      return {
+        success: true,
+        data: null,
+      };
+    } catch (error) {
+      console.error(error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? { message: error.message }
+            : { message: "Unknown error" },
+      };
+    }
+  });
+
 export const createWorkspace = createServerFn({ method: "POST" })
   .inputValidator((data: { name: string; fileType: string }) => {
     if (!data.name || typeof data.name !== "string") {
