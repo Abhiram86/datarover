@@ -33,7 +33,7 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-async function getCachedFile(key: string): Promise<Uint8Array | null> {
+export async function getCachedFile(key: string): Promise<Uint8Array | null> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], "readonly");
@@ -48,12 +48,26 @@ async function getCachedFile(key: string): Promise<Uint8Array | null> {
   });
 }
 
-async function setCachedFile(key: string, buffer: Uint8Array): Promise<void> {
+export async function setCachedFile(key: string, buffer: Uint8Array): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction([STORE_NAME], "readwrite");
     const store = transaction.objectStore(STORE_NAME);
     const request = store.put({ buffer }, key);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      db.close();
+      resolve();
+    };
+  });
+}
+
+export async function deleteCachedFile(key: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE_NAME], "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete(key);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       db.close();
@@ -197,6 +211,10 @@ export default function DataPreview({
             })),
           );
         }
+
+        const exportToParquet = useDuckDBStore.getState().exportToParquet;
+        const buffer = await exportToParquet("data");
+        await setCachedFile(workspaceId, buffer);
       } catch (e) {
         console.error("Failed to refresh preview:", e);
       }

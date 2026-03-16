@@ -1,6 +1,6 @@
 import { ClientOnly, createFileRoute } from "@tanstack/react-router";
 import History from "@/components/Chat/History";
-import DataPreview from "@/components/DataPreview";
+import DataPreview, { deleteCachedFile } from "@/components/DataPreview";
 import { Panel } from "@/components/Panels/Panel";
 import { PanelGroup } from "@/components/Panels/PanelGroup";
 import WorkspaceHeader from "@/components/WorkSpaceHeader";
@@ -112,10 +112,23 @@ function RouteComponent() {
       previousWorkspaceId.current !== null &&
       previousWorkspaceId.current !== currentSlug
     ) {
-      // Workspace changed - clear old data
+      const prevWorkspaceId = previousWorkspaceId.current;
+
+      // Cleanup previous workspace data
       resetFileStore();
       resetConversationStore();
       resetDuckDBStore();
+
+      // Clear IndexedDB cache for previous workspace
+      if (prevWorkspaceId !== "new") {
+        deleteCachedFile(prevWorkspaceId).catch(console.error);
+        
+        // Clear insights from localStorage
+        localStorage.removeItem(`insights_${prevWorkspaceId}`);
+        
+        // Clear notebook from localStorage
+        localStorage.removeItem(`notebook_${prevWorkspaceId}`);
+      }
 
       // Also clear insights for the new workspace (will be loaded from DB)
       const workspaceId = currentSlug !== "new" ? currentSlug : null;

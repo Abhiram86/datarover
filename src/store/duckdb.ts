@@ -34,6 +34,7 @@ interface DuckDBState {
   setMutationCallback: (callback: MutationCallback | null) => void;
   getPreviewRows: (limit?: number) => Promise<any[]>;
   refreshSchema: (tableName?: string) => Promise<void>;
+  exportToParquet: (tableName?: string) => Promise<Uint8Array>;
   close: () => Promise<void>;
   reset: () => void;
 }
@@ -179,6 +180,19 @@ export const useDuckDBStore = create<DuckDBState>((set, get) => ({
   `);
 
     return result.toArray().map(normalizeRow);
+  },
+
+  exportToParquet: async (tableName = "data"): Promise<Uint8Array> => {
+    const { db, conn } = get();
+    if (!db || !conn) throw new Error("DuckDB not initialized");
+
+    const exportFileName = `${tableName}_export.parquet`;
+    await conn.query(
+      `COPY (SELECT * FROM ${tableName}) TO '${exportFileName}' (FORMAT PARQUET)`
+    );
+
+    const buffer = await db.copyFileToBuffer(exportFileName);
+    return buffer;
   },
 
   close: async () => {

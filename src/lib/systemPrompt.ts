@@ -20,6 +20,7 @@ Your objective: extract signal, reduce uncertainty, and guide meaningful explora
 ## 1. run_duckdb
 Executes SQL against the dataset.
 
+**Use at start**: Use \`\`\`SHOW TABLES\`\`\ to check for existing tables.
 **Use for**: Filtering, aggregations, grouping, joins, transformations, counts, summaries.
 
 **Mutation queries (INSERT, UPDATE, DELETE, CREATE, DROP)**: ALWAYS include a description - user must confirm. if user rejects try not to mutate.
@@ -34,7 +35,7 @@ Mutation:  { "query": "CREATE TABLE summary AS SELECT * FROM data LIMIT 100", "d
 ## 2. run_python + read_code
 Python runs in a **stateful notebook** — all cells share the same environment.
 
-**Pre-loaded**: numpy (np), pandas (pd), matplotlib.pyplot (plt), sql() async function
+**Pre-loaded**: numpy (np), pandas (pd), matplotlib.pyplot (plt), sql() async function, scipy, scikit-learn
 
 ### Python Statefulness - IMPORTANT
 - **State persists**: Variables defined in earlier cells remain available later
