@@ -1,290 +1,61 @@
-Welcome to your new TanStack app! 
-
-# Getting Started
-
-To run this application:
-
-```bash
-bun install
-bun --bun run dev
-```
-
-# Building For Production
-
-To build this application for production:
-
-```bash
-bun --bun run build
-```
-
-## Testing
-
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
-
-```bash
-bun --bun run test
-```
-
-## Styling
-
-This project uses CSS for styling.
-
-
-
-
-## Routing
-This project uses [TanStack Router](https://tanstack.com/router). The initial setup is a file based router. Which means that the routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add another a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you use the `<Outlet />` component.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { Outlet, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-
-import { Link } from "@tanstack/react-router";
-
-export const Route = createRootRoute({
-  component: () => (
-    <>
-      <header>
-        <nav>
-          <Link to="/">Home</Link>
-          <Link to="/about">About</Link>
-        </nav>
-      </header>
-      <Outlet />
-      <TanStackRouterDevtools />
-    </>
-  ),
-})
-```
-
-The `<TanStackRouterDevtools />` component is not required so you can remove it if you don't want it in your layout.
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-const peopleRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/people",
-  loader: async () => {
-    const response = await fetch("https://swapi.dev/api/people");
-    return response.json() as Promise<{
-      results: {
-        name: string;
-      }[];
-    }>;
-  },
-  component: () => {
-    const data = peopleRoute.useLoaderData();
-    return (
-      <ul>
-        {data.results.map((person) => (
-          <li key={person.name}>{person.name}</li>
-        ))}
-      </ul>
-    );
-  },
-});
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-### React-Query
-
-React-Query is an excellent addition or alternative to route loading and integrating it into you application is a breeze.
-
-First add your dependencies:
-
-```bash
-bun install @tanstack/react-query @tanstack/react-query-devtools
-```
-
-Next we'll need to create a query client and provider. We recommend putting those in `main.tsx`.
-
-```tsx
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-// ...
-
-const queryClient = new QueryClient();
-
-// ...
-
-if (!rootElement.innerHTML) {
-  const root = ReactDOM.createRoot(rootElement);
-
-  root.render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  );
-}
-```
-
-You can also add TanStack Query Devtools to the root route (optional).
-
-```tsx
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-
-const rootRoute = createRootRoute({
-  component: () => (
-    <>
-      <Outlet />
-      <ReactQueryDevtools buttonPosition="top-right" />
-      <TanStackRouterDevtools />
-    </>
-  ),
-});
-```
-
-Now you can use `useQuery` to fetch your data.
-
-```tsx
-import { useQuery } from "@tanstack/react-query";
-
-import "./App.css";
-
-function App() {
-  const { data } = useQuery({
-    queryKey: ["people"],
-    queryFn: () =>
-      fetch("https://swapi.dev/api/people")
-        .then((res) => res.json())
-        .then((data) => data.results as { name: string }[]),
-    initialData: [],
-  });
-
-  return (
-    <div>
-      <ul>
-        {data.map((person) => (
-          <li key={person.name}>{person.name}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-export default App;
-```
-
-You can find out everything you need to know on how to use React-Query in the [React-Query documentation](https://tanstack.com/query/latest/docs/framework/react/overview).
-
-## State Management
-
-Another common requirement for React applications is state management. There are many options for state management in React. TanStack Store provides a great starting point for your project.
-
-First you need to add TanStack Store as a dependency:
-
-```bash
-bun install @tanstack/store
-```
-
-Now let's create a simple counter in the `src/App.tsx` file as a demonstration.
-
-```tsx
-import { useStore } from "@tanstack/react-store";
-import { Store } from "@tanstack/store";
-import "./App.css";
-
-const countStore = new Store(0);
-
-function App() {
-  const count = useStore(countStore);
-  return (
-    <div>
-      <button onClick={() => countStore.setState((n) => n + 1)}>
-        Increment - {count}
-      </button>
-    </div>
-  );
-}
-
-export default App;
-```
-
-One of the many nice features of TanStack Store is the ability to derive state from other state. That derived state will update when the base state updates.
-
-Let's check this out by doubling the count using derived state.
-
-```tsx
-import { useStore } from "@tanstack/react-store";
-import { Store, Derived } from "@tanstack/store";
-import "./App.css";
-
-const countStore = new Store(0);
-
-const doubledStore = new Derived({
-  fn: () => countStore.state * 2,
-  deps: [countStore],
-});
-doubledStore.mount();
-
-function App() {
-  const count = useStore(countStore);
-  const doubledCount = useStore(doubledStore);
-
-  return (
-    <div>
-      <button onClick={() => countStore.setState((n) => n + 1)}>
-        Increment - {count}
-      </button>
-      <div>Doubled - {doubledCount}</div>
-    </div>
-  );
-}
-
-export default App;
-```
-
-We use the `Derived` class to create a new store that is derived from another store. The `Derived` class has a `mount` method that will start the derived store updating.
-
-Once we've created the derived store we can use it in the `App` component just like we would any other store using the `useStore` hook.
-
-You can find out everything you need to know on how to use TanStack Store in the [TanStack Store documentation](https://tanstack.com/store/latest).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
+# DataRover
+
+DataRover is an AI-powered data analysis workspace designed to bring advanced data querying, visualization, and Python execution directly to your browser. By combining in-browser data engines, an embedded Python sandbox, and AI assistance, it enables users to seamlessly explore and analyze their datasets in a unified environment.
+
+## 🚀 Core Features
+
+- **Interactive Workspaces:** Secure, isolated environments for individual datasets where you can maintain chat histories, code blocks, and data insights.
+- **Client-Side Data Engine:** Powered by **DuckDB-WASM**, DataRover parses and queries large datasets (CSV, Excel, Parquet) entirely in the browser using SQL, offering blazing fast performance.
+- **Python Code Notebook:** Features an embedded **Pyodide sandbox** allowing you to execute Python data science scripts directly within the workspace.
+- **AI Data Assistant:** Integrated with the **Vercel AI SDK**, the assistant can autonomously analyze your schema, write and execute SQL queries, generate Python code, and extract meaningful insights.
+- **Cloud Storage & Sync:** Datasets are securely stored using **Supabase**, while user data, conversations, and workspace metadata are persisted in **Neon (Serverless Postgres)** using **Drizzle ORM**.
+
+## 🛠️ Tech Stack
+
+- **Framework:** React 19, Vite, TanStack Router & TanStack Start
+- **State Management:** Zustand
+- **Styling:** Tailwind CSS v4, Lucide React
+- **Data Engine (Browser):** DuckDB-WASM (`@duckdb/duckdb-wasm`)
+- **Python Sandbox (Browser):** Pyodide
+- **Database / ORM:** Neon (PostgreSQL), Drizzle ORM
+- **File Storage:** Supabase Storage
+- **AI Integration:** Vercel AI SDK (with OpenAI/Groq compatibility)
+- **Data Parsing:** SheetJS, Apache Arrow, ParquetJS
+
+## 📂 Project Structure
+
+- `src/routes/` - File-based routing setup managed by TanStack Router (includes Authed Workspaces).
+- `src/components/` - Reusable UI components including the `DataPreview` grid, `CodeNotebook`, and Chat `History`.
+- `src/db/` - Database schema definitions leveraging Drizzle ORM.
+- `src/store/` - Zustand stores for modular state management (`duckdb.ts`, `sandbox.ts`, `notebook.ts`, `conversation.ts`, etc.).
+- `src/utils/` - Shared utilities, including server-side functions (`*.server.ts`) for secure operations.
+
+## 🏃‍♂️ Getting Started
+
+### Prerequisites
+- [Bun](https://bun.sh/) installed on your machine.
+- Environment variables configured for Supabase, Neon DB, and your preferred AI provider.
+
+### Installation
+
+1. Install dependencies:
+   ```bash
+   bun install
+   ```
+
+2. Start the development server:
+   ```bash
+   bun run dev
+   ```
+   *The server will start on port 3000.*
+
+### Building and Testing
+- **Build for Production:** `bun run build`
+- **Run Tests:** `bun run test` (Powered by Vitest)
+
+## 🎨 UI & Code Style
+
+- Enforces strict TypeScript configuration.
+- Follows modular Zustand store patterns (separating UI state, data, and actions).
+- Utilizes `requestAnimationFrame` for batched UI updates during AI streaming for maximum performance.
+- Database relations mapped via `drizzle-orm/relations`.
