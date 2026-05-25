@@ -2,6 +2,14 @@
 
 DataRover is an AI-powered data analysis workspace designed to bring advanced data querying, visualization, and Python execution directly to your browser. By combining in-browser data engines, an embedded Python sandbox, and AI assistance, it enables users to seamlessly explore and analyze their datasets in a unified environment.
 
+![App Screenshot](./public/screenshot.png)
+
+## 🔑 Demo Credentials
+
+To quickly test the deployed application, use the following credentials:
+- **Email:** `john@email.com`
+- **Password:** `123456`
+
 ## 🚀 Core Features
 
 - **Interactive Workspaces:** Secure, isolated environments for individual datasets where you can maintain chat histories, code blocks, and data insights.
